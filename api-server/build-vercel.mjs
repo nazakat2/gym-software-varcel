@@ -24,7 +24,6 @@ async function buildVercel() {
     },
     external: [
       "dotenv",
-      "*.node",
       "sharp",
       "better-sqlite3",
       "sqlite3",
