@@ -1,0 +1,1539 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Gym Management System API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: dashboard
+  - name: members
+  - name: measurements
+  - name: attendance
+  - name: employees
+  - name: billing
+  - name: sales
+  - name: inventory
+  - name: accounts
+  - name: users
+  - name: reports
+  - name: notifications
+  - name: business
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Dashboard ──────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard overview stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent activity feed
+      responses:
+        "200":
+          description: Recent activities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Activity"
+
+  /dashboard/revenue-chart:
+    get:
+      operationId: getRevenueChart
+      tags: [dashboard]
+      summary: Monthly revenue chart data
+      responses:
+        "200":
+          description: Revenue chart
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RevenuePoint"
+
+  /dashboard/membership-breakdown:
+    get:
+      operationId: getMembershipBreakdown
+      tags: [dashboard]
+      summary: Membership type breakdown
+      responses:
+        "200":
+          description: Breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PieSlice"
+
+  # ── Members ────────────────────────────────────────────────
+  /members:
+    get:
+      operationId: listMembers
+      tags: [members]
+      summary: List all members
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, expired, all]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Members list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Member"
+    post:
+      operationId: createMember
+      tags: [members]
+      summary: Add new member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberBody"
+      responses:
+        "201":
+          description: Created member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+
+  /members/{id}:
+    get:
+      operationId: getMember
+      tags: [members]
+      summary: Get member by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+    put:
+      operationId: updateMember
+      tags: [members]
+      summary: Update member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberBody"
+      responses:
+        "200":
+          description: Updated member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+    delete:
+      operationId: deleteMember
+      tags: [members]
+      summary: Delete member
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Fitness Measurements ───────────────────────────────────
+  /measurements:
+    get:
+      operationId: listMeasurements
+      tags: [measurements]
+      summary: List measurements
+      parameters:
+        - name: memberId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Measurements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Measurement"
+    post:
+      operationId: createMeasurement
+      tags: [measurements]
+      summary: Add measurement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMeasurementBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Measurement"
+
+  /measurements/{id}:
+    delete:
+      operationId: deleteMeasurement
+      tags: [measurements]
+      summary: Delete measurement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Attendance ─────────────────────────────────────────────
+  /attendance:
+    get:
+      operationId: listAttendance
+      tags: [attendance]
+      summary: List attendance records
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+        - name: memberId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attendance"
+    post:
+      operationId: checkIn
+      tags: [attendance]
+      summary: Record attendance check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInBody"
+      responses:
+        "201":
+          description: Checked in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attendance"
+
+  /attendance/today-stats:
+    get:
+      operationId: getTodayAttendanceStats
+      tags: [attendance]
+      summary: Today attendance stats
+      responses:
+        "200":
+          description: Today stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceStats"
+
+  /attendance/monthly-chart:
+    get:
+      operationId: getMonthlyAttendanceChart
+      tags: [attendance]
+      summary: Monthly attendance chart
+      responses:
+        "200":
+          description: Monthly chart
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendancePoint"
+
+  # ── Employees ──────────────────────────────────────────────
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      summary: List employees/trainers
+      responses:
+        "200":
+          description: Employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: Add employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+
+  /employees/{id}:
+    put:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: Update employee
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      summary: Delete employee
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Billing ────────────────────────────────────────────────
+  /billing:
+    get:
+      operationId: listBilling
+      tags: [billing]
+      summary: List billing records
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [paid, unpaid, all]
+        - name: memberId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Billing records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+    post:
+      operationId: createInvoice
+      tags: [billing]
+      summary: Create invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceBody"
+      responses:
+        "201":
+          description: Created invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+
+  /billing/{id}/pay:
+    post:
+      operationId: markInvoicePaid
+      tags: [billing]
+      summary: Mark invoice as paid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentBody"
+      responses:
+        "200":
+          description: Invoice paid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+
+  /billing/dues-summary:
+    get:
+      operationId: getDuesSummary
+      tags: [billing]
+      summary: Get dues summary
+      responses:
+        "200":
+          description: Dues summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuesSummary"
+
+  # ── Sales / POS ────────────────────────────────────────────
+  /products:
+    get:
+      operationId: listProducts
+      tags: [sales]
+      summary: List products
+      responses:
+        "200":
+          description: Products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      operationId: createProduct
+      tags: [sales]
+      summary: Add product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+  /products/{id}:
+    put:
+      operationId: updateProduct
+      tags: [sales]
+      summary: Update product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+    delete:
+      operationId: deleteProduct
+      tags: [sales]
+      summary: Delete product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  /sales:
+    get:
+      operationId: listSales
+      tags: [sales]
+      summary: List sales
+      responses:
+        "200":
+          description: Sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sale"
+    post:
+      operationId: createSale
+      tags: [sales]
+      summary: Create sale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSaleBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sale"
+
+  # ── Inventory & Suppliers ──────────────────────────────────
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [inventory]
+      summary: List suppliers
+      responses:
+        "200":
+          description: Suppliers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Supplier"
+    post:
+      operationId: createSupplier
+      tags: [inventory]
+      summary: Add supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSupplierBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+
+  /suppliers/{id}:
+    put:
+      operationId: updateSupplier
+      tags: [inventory]
+      summary: Update supplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSupplierBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+    delete:
+      operationId: deleteSupplier
+      tags: [inventory]
+      summary: Delete supplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Accounts / Vouchers ────────────────────────────────────
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [accounts]
+      summary: List chart of accounts
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+
+  /vouchers:
+    get:
+      operationId: listVouchers
+      tags: [accounts]
+      summary: List voucher entries
+      responses:
+        "200":
+          description: Vouchers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Voucher"
+    post:
+      operationId: createVoucher
+      tags: [accounts]
+      summary: Create voucher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVoucherBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voucher"
+
+  # ── Admin Users & Roles ────────────────────────────────────
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [users]
+      summary: List admin users
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+    post:
+      operationId: createAdminUser
+      tags: [users]
+      summary: Create admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdminUserBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+
+  /admin/users/{id}:
+    put:
+      operationId: updateAdminUser
+      tags: [users]
+      summary: Update admin user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdminUserBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+    delete:
+      operationId: deleteAdminUser
+      tags: [users]
+      summary: Delete admin user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Notifications ──────────────────────────────────────────
+  /notifications:
+    get:
+      operationId: listAdminNotifications
+      tags: [notifications]
+      summary: List notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminNotification"
+
+  /notifications/{id}/read:
+    post:
+      operationId: markAdminNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+
+  # ── Business Settings ──────────────────────────────────────
+  /business:
+    get:
+      operationId: getBusinessSettings
+      tags: [business]
+      summary: Get business info
+      responses:
+        "200":
+          description: Business info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessSettings"
+    put:
+      operationId: updateBusinessSettings
+      tags: [business]
+      summary: Update business info
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBusinessBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessSettings"
+
+  # ── Reports ────────────────────────────────────────────────
+  /reports/financial:
+    get:
+      operationId: getFinancialReport
+      tags: [reports]
+      summary: Financial report
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Financial report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialReport"
+
+  /reports/attendance:
+    get:
+      operationId: getAttendanceReport
+      tags: [reports]
+      summary: Attendance report
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Attendance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceReport"
+
+  /reports/members:
+    get:
+      operationId: getMemberReport
+      tags: [reports]
+      summary: Member report
+      responses:
+        "200":
+          description: Member report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberReport"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    SuccessMessage:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    DashboardStats:
+      type: object
+      properties:
+        totalMembers:
+          type: integer
+        activeMembers:
+          type: integer
+        expiredMembers:
+          type: integer
+        todayAttendance:
+          type: integer
+        monthlyRevenue:
+          type: number
+        unpaidDues:
+          type: number
+        totalEmployees:
+          type: integer
+        lowStockItems:
+          type: integer
+      required: [totalMembers, activeMembers, expiredMembers, todayAttendance, monthlyRevenue, unpaidDues, totalEmployees, lowStockItems]
+
+    Activity:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        description:
+          type: string
+        time:
+          type: string
+        icon:
+          type: string
+      required: [id, type, description, time, icon]
+
+    RevenuePoint:
+      type: object
+      properties:
+        month:
+          type: string
+        revenue:
+          type: number
+        expenses:
+          type: number
+      required: [month, revenue, expenses]
+
+    PieSlice:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: integer
+        color:
+          type: string
+      required: [name, value, color]
+
+    Member:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        cnic:
+          type: string
+        address:
+          type: string
+        photoUrl:
+          type: string
+          nullable: true
+        plan:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        planStartDate:
+          type: string
+        planExpiryDate:
+          type: string
+        status:
+          type: string
+          enum: [active, expired]
+        createdAt:
+          type: string
+      required: [id, name, phone, cnic, plan, planStartDate, planExpiryDate, status, createdAt]
+
+    CreateMemberBody:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        cnic:
+          type: string
+        address:
+          type: string
+        photoUrl:
+          type: string
+          nullable: true
+        plan:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        planStartDate:
+          type: string
+      required: [name, phone, cnic, plan, planStartDate]
+
+    Measurement:
+      type: object
+      properties:
+        id:
+          type: integer
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        weight:
+          type: number
+        height:
+          type: number
+        bmi:
+          type: number
+        bodyFat:
+          type: number
+          nullable: true
+        date:
+          type: string
+      required: [id, memberId, memberName, weight, height, bmi, date]
+
+    CreateMeasurementBody:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        weight:
+          type: number
+        height:
+          type: number
+        bodyFat:
+          type: number
+          nullable: true
+        date:
+          type: string
+      required: [memberId, weight, height, date]
+
+    Attendance:
+      type: object
+      properties:
+        id:
+          type: integer
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        date:
+          type: string
+        checkInTime:
+          type: string
+        checkOutTime:
+          type: string
+          nullable: true
+      required: [id, memberId, memberName, date, checkInTime]
+
+    CheckInBody:
+      type: object
+      properties:
+        memberId:
+          type: integer
+      required: [memberId]
+
+    AttendanceStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        present:
+          type: integer
+        peakHour:
+          type: string
+      required: [total, present, peakHour]
+
+    AttendancePoint:
+      type: object
+      properties:
+        day:
+          type: string
+        count:
+          type: integer
+      required: [day, count]
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+          enum: [trainer, staff, manager]
+        phone:
+          type: string
+        email:
+          type: string
+        salary:
+          type: number
+        commission:
+          type: number
+        assignedMembers:
+          type: integer
+        joinDate:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+      required: [id, name, role, phone, salary, assignedMembers, joinDate, status]
+
+    CreateEmployeeBody:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [trainer, staff, manager]
+        phone:
+          type: string
+        email:
+          type: string
+        salary:
+          type: number
+        commission:
+          type: number
+        joinDate:
+          type: string
+      required: [name, role, phone, salary, joinDate]
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        amount:
+          type: number
+        plan:
+          type: string
+        dueDate:
+          type: string
+        paidDate:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [paid, unpaid]
+        paymentMethod:
+          type: string
+          nullable: true
+      required: [id, memberId, memberName, amount, plan, dueDate, status]
+
+    CreateInvoiceBody:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        amount:
+          type: number
+        plan:
+          type: string
+        dueDate:
+          type: string
+      required: [memberId, amount, plan, dueDate]
+
+    PaymentBody:
+      type: object
+      properties:
+        paymentMethod:
+          type: string
+          enum: [cash, jazzcash, easypaisa, bank_transfer]
+      required: [paymentMethod]
+
+    DuesSummary:
+      type: object
+      properties:
+        totalDues:
+          type: number
+        totalInvoices:
+          type: integer
+        unpaidCount:
+          type: integer
+        paidThisMonth:
+          type: number
+      required: [totalDues, totalInvoices, unpaidCount, paidThisMonth]
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+        stock:
+          type: integer
+        supplierId:
+          type: integer
+          nullable: true
+        supplierName:
+          type: string
+          nullable: true
+        lowStockThreshold:
+          type: integer
+      required: [id, name, category, price, stock, lowStockThreshold]
+
+    CreateProductBody:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+        stock:
+          type: integer
+        supplierId:
+          type: integer
+          nullable: true
+        lowStockThreshold:
+          type: integer
+      required: [name, category, price, stock, lowStockThreshold]
+
+    Sale:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        productName:
+          type: string
+        quantity:
+          type: integer
+        totalAmount:
+          type: number
+        status:
+          type: string
+          enum: [paid, unpaid]
+        date:
+          type: string
+        customerName:
+          type: string
+          nullable: true
+      required: [id, productId, productName, quantity, totalAmount, status, date]
+
+    CreateSaleBody:
+      type: object
+      properties:
+        productId:
+          type: integer
+        quantity:
+          type: integer
+        status:
+          type: string
+          enum: [paid, unpaid]
+        customerName:
+          type: string
+          nullable: true
+      required: [productId, quantity, status]
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contact:
+          type: string
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        productsCount:
+          type: integer
+      required: [id, name, contact, productsCount]
+
+    CreateSupplierBody:
+      type: object
+      properties:
+        name:
+          type: string
+        contact:
+          type: string
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+      required: [name, contact]
+
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [income, expense, asset, liability]
+        balance:
+          type: number
+      required: [id, name, type, balance]
+
+    Voucher:
+      type: object
+      properties:
+        id:
+          type: integer
+        accountId:
+          type: integer
+        accountName:
+          type: string
+        type:
+          type: string
+          enum: [income, expense]
+        amount:
+          type: number
+        description:
+          type: string
+        date:
+          type: string
+      required: [id, accountId, accountName, type, amount, description, date]
+
+    CreateVoucherBody:
+      type: object
+      properties:
+        accountId:
+          type: integer
+        type:
+          type: string
+          enum: [income, expense]
+        amount:
+          type: number
+        description:
+          type: string
+        date:
+          type: string
+      required: [accountId, type, amount, description, date]
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff, trainer]
+        permissions:
+          type: array
+          items:
+            type: string
+        lastLogin:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive]
+      required: [id, name, email, role, permissions, status]
+
+    CreateAdminUserBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff, trainer]
+        permissions:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, inactive]
+      required: [name, email, role, permissions, status]
+
+    AdminNotification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, type, title, message, read, createdAt]
+
+    BusinessSettings:
+      type: object
+      properties:
+        id:
+          type: integer
+        gymName:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        logoUrl:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        timezone:
+          type: string
+      required: [id, gymName, address, phone, email, currency, timezone]
+
+    UpdateBusinessBody:
+      type: object
+      properties:
+        gymName:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        logoUrl:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        timezone:
+          type: string
+      required: [gymName, address, phone, email, currency, timezone]
+
+    FinancialReport:
+      type: object
+      properties:
+        month:
+          type: string
+        totalRevenue:
+          type: number
+        totalExpenses:
+          type: number
+        netProfit:
+          type: number
+        membershipIncome:
+          type: number
+        salesIncome:
+          type: number
+        breakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevenuePoint"
+      required: [month, totalRevenue, totalExpenses, netProfit, membershipIncome, salesIncome, breakdown]
+
+    AttendanceReport:
+      type: object
+      properties:
+        month:
+          type: string
+        totalVisits:
+          type: integer
+        uniqueMembers:
+          type: integer
+        avgDailyVisits:
+          type: number
+        peakDay:
+          type: string
+        chart:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendancePoint"
+      required: [month, totalVisits, uniqueMembers, avgDailyVisits, peakDay, chart]
+
+    MemberReport:
+      type: object
+      properties:
+        totalMembers:
+          type: integer
+        newThisMonth:
+          type: integer
+        renewalsThisMonth:
+          type: integer
+        expiringThisWeek:
+          type: integer
+        byPlan:
+          type: array
+          items:
+            $ref: "#/components/schemas/PieSlice"
+      required: [totalMembers, newThisMonth, renewalsThisMonth, expiringThisWeek, byPlan]

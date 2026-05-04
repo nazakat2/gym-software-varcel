@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/gym-admin/"
+title = "Gym Management System"
+version = "1.0.0"
+id = "artifacts/gym-admin"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/gym-admin/" ]
+localPort = 24486
+
+[services.development]
+run = "pnpm --filter @workspace/gym-admin run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gym-admin", "run", "build" ]
+publicDir = "artifacts/gym-admin/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24486"
+BASE_PATH = "/gym-admin/"

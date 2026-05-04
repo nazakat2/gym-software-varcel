@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "framework": null,
+  "installCommand": "pnpm install",
+  "buildCommand": "node api-server/build-vercel.mjs && pnpm --filter @workspace/gym-admin run build",
+  "outputDirectory": "gym-admin/dist/public",
+  "functions": {
+    "api/app.mjs": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/app"
+    }
+  ]
+}
