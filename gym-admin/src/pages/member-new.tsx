@@ -79,7 +79,7 @@ export default function AddMember() {
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast({ title: "Photo must be under 5MB", variant: "destructive" }); return; }
+    if (file.size > 1 * 1024 * 1024) { toast({ title: "Photo must be under 1MB", variant: "destructive" }); return; }
     const reader = new FileReader();
     reader.onloadend = () => setPhotoPreview(reader.result as string);
     reader.readAsDataURL(file);
@@ -92,6 +92,10 @@ export default function AddMember() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !phone || !cnic) { toast({ title: "Name, Phone and CNIC are required", variant: "destructive" }); return; }
+    const cnicDigits = cnic.replace(/\D/g, "");
+    if (cnicDigits.length !== 13) { toast({ title: "CNIC must be exactly 13 digits", variant: "destructive" }); return; }
+    const phoneDigits = phone.replace(/\D/g, "");
+    if (phoneDigits.length !== 11) { toast({ title: "Phone number must be exactly 11 digits", variant: "destructive" }); return; }
     setLoading(true);
     try {
       const member = await apiFetch("/members", {
@@ -143,10 +147,29 @@ export default function AddMember() {
         <Button variant="ghost" size="icon" onClick={() => setLocation("/members")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-3xl font-bold tracking-tight">Register New Member</h1>
           <p className="text-muted-foreground text-sm">Fill in member details to create a complete profile</p>
         </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => {
+          setName("Ahmed Ali Khan");
+          setGender("male");
+          setDob("1995-06-15");
+          setBloodGroup("B+");
+          setCnic("3520112345678");
+          setPhone("03001234567");
+          setWhatsapp("03001234567");
+          setEmail("ahmed.ali@email.com");
+          setCity("Lahore");
+          setArea("DHA Phase 5");
+          setAddress("House 12, Street 4, DHA Phase 5, Lahore");
+          setEmergencyName("Ali Khan");
+          setEmergencyPhone("03211234567");
+          setFitnessGoal("weight-loss");
+          setReferralSource("Friend Referral");
+        }}>
+          Fill Demo Data
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -186,8 +209,8 @@ export default function AddMember() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>CNIC *</Label>
-                  <Input value={cnic} onChange={e => setCnic(e.target.value)} placeholder="XXXXX-XXXXXXX-X" required />
+                  <Label>CNIC * (13 digits)</Label>
+                  <Input value={cnic} onChange={e => { const d = e.target.value.replace(/\D/g, "").slice(0, 13); setCnic(d); }} placeholder="XXXXXXXXXXXXX" maxLength={13} required />
                 </div>
               </div>
 
@@ -209,7 +232,7 @@ export default function AddMember() {
                   ) : (
                     <>
                       <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                      <p className="text-xs text-muted-foreground text-center px-2">Click to upload<br/>Max 5 MB</p>
+                      <p className="text-xs text-muted-foreground text-center px-2">Click to upload<br/>Max 1 MB</p>
                     </>
                   )}
                 </div>
@@ -225,12 +248,12 @@ export default function AddMember() {
             <SectionHeader icon={Phone} title="Contact Information" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <Label>Phone Number *</Label>
-                <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="03XX-XXXXXXX" required />
+                <Label>Phone Number * (11 digits)</Label>
+                <Input value={phone} onChange={e => { const d = e.target.value.replace(/\D/g, "").slice(0, 11); setPhone(d); }} placeholder="03XXXXXXXXX" maxLength={11} required />
               </div>
               <div className="space-y-1">
-                <Label>WhatsApp Number</Label>
-                <Input value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="03XX-XXXXXXX" />
+                <Label>WhatsApp Number (11 digits)</Label>
+                <Input value={whatsapp} onChange={e => { const d = e.target.value.replace(/\D/g, "").slice(0, 11); setWhatsapp(d); }} placeholder="03XXXXXXXXX" maxLength={11} />
               </div>
               <div className="space-y-1">
                 <Label>Email</Label>
@@ -249,8 +272,8 @@ export default function AddMember() {
                 <Input value={emergencyName} onChange={e => setEmergencyName(e.target.value)} placeholder="Parent / Spouse name" />
               </div>
               <div className="space-y-1">
-                <Label>Emergency Contact Phone</Label>
-                <Input value={emergencyPhone} onChange={e => setEmergencyPhone(e.target.value)} placeholder="03XX-XXXXXXX" />
+                <Label>Emergency Contact Phone (11 digits)</Label>
+                <Input value={emergencyPhone} onChange={e => { const d = e.target.value.replace(/\D/g, "").slice(0, 11); setEmergencyPhone(d); }} placeholder="03XXXXXXXXX" maxLength={11} />
               </div>
               <div className="md:col-span-2 space-y-1">
                 <Label>Full Address</Label>
@@ -327,6 +350,14 @@ export default function AddMember() {
               <div>
                 <Label className="mb-3 block">Medical Conditions</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="none-condition"
+                      checked={selectedConditions.length === 0}
+                      onCheckedChange={() => setSelectedConditions([])}
+                    />
+                    <label htmlFor="none-condition" className="text-sm cursor-pointer font-medium">None</label>
+                  </div>
                   {CONDITIONS.map(c => (
                     <div key={c} className="flex items-center gap-2">
                       <Checkbox

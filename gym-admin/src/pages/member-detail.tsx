@@ -389,13 +389,13 @@ export default function MemberDetail() {
               <CardContent>
                 {editMode ? (
                   <div className="grid grid-cols-1 gap-3">
-                    <div className="space-y-1"><Label className="text-xs">Phone</Label><Input value={editPhone} onChange={e=>setEditPhone(e.target.value)} /></div>
-                    <div className="space-y-1"><Label className="text-xs">WhatsApp</Label><Input value={editWhatsapp} onChange={e=>setEditWhatsapp(e.target.value)} /></div>
+                    <div className="space-y-1"><Label className="text-xs">Phone (11 digits)</Label><Input value={editPhone} onChange={e=>setEditPhone(e.target.value.replace(/\D/g,"").slice(0,11))} maxLength={11} /></div>
+                    <div className="space-y-1"><Label className="text-xs">WhatsApp (11 digits)</Label><Input value={editWhatsapp} onChange={e=>setEditWhatsapp(e.target.value.replace(/\D/g,"").slice(0,11))} maxLength={11} /></div>
                     <div className="space-y-1"><Label className="text-xs">Email</Label><Input value={editEmail} onChange={e=>setEditEmail(e.target.value)} /></div>
                     <div className="space-y-1"><Label className="text-xs">City</Label><Input value={editCity} onChange={e=>setEditCity(e.target.value)} /></div>
                     <div className="space-y-1"><Label className="text-xs">Area</Label><Input value={editArea} onChange={e=>setEditArea(e.target.value)} /></div>
                     <div className="space-y-1"><Label className="text-xs">Emergency Contact</Label><Input value={editEmergencyName} onChange={e=>setEditEmergencyName(e.target.value)} placeholder="Name" /></div>
-                    <div className="space-y-1"><Label className="text-xs">Emergency Phone</Label><Input value={editEmergencyPhone} onChange={e=>setEditEmergencyPhone(e.target.value)} /></div>
+                    <div className="space-y-1"><Label className="text-xs">Emergency Phone (11 digits)</Label><Input value={editEmergencyPhone} onChange={e=>setEditEmergencyPhone(e.target.value.replace(/\D/g,"").slice(0,11))} maxLength={11} /></div>
                   </div>
                 ) : (
                   <div className="space-y-2 text-sm">

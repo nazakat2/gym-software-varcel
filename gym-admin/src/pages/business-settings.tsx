@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Settings, Save } from "lucide-react";
+import { Settings, Save, Facebook, Instagram } from "lucide-react";
 
 export default function BusinessSettings() {
   const { toast } = useToast();
@@ -18,6 +18,7 @@ export default function BusinessSettings() {
     gymName: "", address: "", phone: "", email: "", website: "",
     monthlyFee: "", quarterlyFee: "", yearlyFee: "", currency: "PKR",
     openTime: "", closeTime: "", taxRate: "",
+    facebook: "", instagram: "", snapchat: "", tiktok: "",
   });
 
   useEffect(() => {
@@ -35,6 +36,10 @@ export default function BusinessSettings() {
         openTime: (settings as any).openTime || "",
         closeTime: (settings as any).closeTime || "",
         taxRate: String((settings as any).taxRate || ""),
+        facebook: (settings as any).facebook || "",
+        instagram: (settings as any).instagram || "",
+        snapchat: (settings as any).snapchat || "",
+        tiktok: (settings as any).tiktok || "",
       });
     }
   }, [settings]);
@@ -55,6 +60,10 @@ export default function BusinessSettings() {
           openTime: form.openTime || undefined,
           closeTime: form.closeTime || undefined,
           taxRate: form.taxRate ? parseFloat(form.taxRate) : undefined,
+          facebook: form.facebook || undefined,
+          instagram: form.instagram || undefined,
+          snapchat: form.snapchat || undefined,
+          tiktok: form.tiktok || undefined,
         }
       });
       toast({ title: "Business settings saved" });
@@ -119,6 +128,30 @@ export default function BusinessSettings() {
             <div className="grid gap-2">
               <Label>Yearly (PKR)</Label>
               <Input type="number" value={form.yearlyFee} onChange={(e) => setForm(f => ({ ...f, yearlyFee: e.target.value }))} placeholder="28000" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Facebook className="h-5 w-5" /> Social Media</CardTitle></CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Facebook</Label>
+              <Input value={form.facebook} onChange={(e) => setForm(f => ({ ...f, facebook: e.target.value }))} placeholder="https://facebook.com/yourgym" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Instagram</Label>
+              <Input value={form.instagram} onChange={(e) => setForm(f => ({ ...f, instagram: e.target.value }))} placeholder="https://instagram.com/yourgym" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Snapchat</Label>
+              <Input value={form.snapchat} onChange={(e) => setForm(f => ({ ...f, snapchat: e.target.value }))} placeholder="https://snapchat.com/add/yourgym" />
+            </div>
+            <div className="grid gap-2">
+              <Label>TikTok</Label>
+              <Input value={form.tiktok} onChange={(e) => setForm(f => ({ ...f, tiktok: e.target.value }))} placeholder="https://tiktok.com/@yourgym" />
             </div>
           </div>
         </CardContent>

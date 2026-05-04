@@ -21,6 +21,7 @@ type EmployeeForm = {
   salary: string;
   commission: string;
   joinDate: string;
+  address: string;
 };
 
 const emptyForm: EmployeeForm = {
@@ -31,7 +32,8 @@ const emptyForm: EmployeeForm = {
   email: "",
   salary: "",
   commission: "",
-  joinDate: new Date().toISOString().split("T")[0]
+  joinDate: new Date().toISOString().split("T")[0],
+  address: "",
 };
 
 export default function Employees() {
@@ -69,6 +71,7 @@ export default function Employees() {
       salary: String(emp.salary),
       commission: String(emp.commission || 0),
       joinDate: emp.joinDate ? new Date(emp.joinDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      address: (emp as any).address || "",
     });
     setOpen(true);
   };
@@ -99,6 +102,7 @@ export default function Employees() {
       salary: parseFloat(form.salary),
       commission: form.commission ? parseFloat(form.commission) : undefined,
       joinDate: form.joinDate,
+      address: form.address || undefined,
     };
     try {
       if (editId) {
@@ -164,6 +168,7 @@ export default function Employees() {
                   <TableHead>Phone</TableHead>
                   <TableHead>CNIC</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Address</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Commission</TableHead>
                   <TableHead>Status</TableHead>
@@ -173,7 +178,7 @@ export default function Employees() {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No employees found
                     </TableCell>
                   </TableRow>
@@ -187,6 +192,7 @@ export default function Employees() {
                       <TableCell>{emp.phone}</TableCell>
                       <TableCell>{emp.cnic || "—"}</TableCell>
                       <TableCell>{emp.email || "—"}</TableCell>
+                      <TableCell>{(emp as any).address || "—"}</TableCell>
                       <TableCell>PKR {Number(emp.salary).toLocaleString()}</TableCell>
                       <TableCell>{emp.commission ? `PKR ${Number(emp.commission).toLocaleString()}` : "—"}</TableCell>
                       <TableCell>
@@ -261,6 +267,10 @@ export default function Employees() {
             <div className="grid gap-2">
               <Label>Email (optional)</Label>
               <Input value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@gym.com" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Address (optional)</Label>
+              <Input value={form.address} onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Street, Area, City" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">

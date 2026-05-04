@@ -1539,9 +1539,10 @@ router.get("/employees", async (_req, res) => {
  *               $ref: '#/components/schemas/Employee'
  */
 router.post("/employees", async (req, res) => {
-  const { name, role, phone, cnic, email, salary, commission, joinDate } = req.body;
+  const { name, role, phone, cnic, email, salary, commission, joinDate, address } = req.body;
   const [emp] = await db.insert(employeesTable).values({
     name, role, phone, cnic: cnic || null, email: email || null,
+    address: address || null,
     salary: salary,
     commission: commission || 0,
     assignedMembers: 0,
@@ -1593,9 +1594,10 @@ router.post("/employees", async (req, res) => {
  */
 router.put("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id as string);
-  const { name, role, phone, cnic, email, salary, commission, joinDate } = req.body;
+  const { name, role, phone, cnic, email, salary, commission, joinDate, address } = req.body;
   const [updated] = await db.update(employeesTable).set({
     name, role, phone, cnic: cnic || null, email: email || null,
+    address: address || null,
     salary: salary,
     commission: commission || 0,
     joinDate,

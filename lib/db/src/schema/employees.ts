@@ -12,6 +12,7 @@ export const employeesTable = pgTable("employees", {
   salary: numeric("salary", { precision: 10, scale: 2 }).notNull(),
   commission: numeric("commission", { precision: 10, scale: 2 }).default("0"),
   assignedMembers: integer("assigned_members").default(0),
+  address: text("home_address"),
   joinDate: text("join_date").notNull(),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

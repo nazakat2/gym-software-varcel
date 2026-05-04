@@ -12,6 +12,7 @@ export interface CreateEmployeeBody {
   role: CreateEmployeeBodyRole;
   phone: string;
   email?: string;
+  address?: string;
   salary: number;
   commission?: number;
   joinDate: string;

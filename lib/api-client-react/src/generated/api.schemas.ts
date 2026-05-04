@@ -158,6 +158,7 @@ export interface Employee {
   phone: string;
   cnic?: string;
   email?: string;
+  address?: string;
   salary: number;
   commission?: number;
   assignedMembers: number;
@@ -180,6 +181,7 @@ export interface CreateEmployeeBody {
   phone: string;
   cnic?: string;
   email?: string;
+  address?: string;
   salary: number;
   commission?: number;
   joinDate: string;
