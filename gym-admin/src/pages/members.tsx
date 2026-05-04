@@ -75,6 +75,7 @@ export default function Members() {
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>CNIC</TableHead>
+              <TableHead>Address</TableHead>
               <TableHead>Plan</TableHead>
               <TableHead>Expiry Date</TableHead>
               <TableHead>Status</TableHead>
@@ -84,13 +85,13 @@ export default function Members() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : filteredMembers?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   No members found.
                 </TableCell>
               </TableRow>
@@ -113,6 +114,7 @@ export default function Members() {
                   <TableCell className="font-medium">{member.name}</TableCell>
                   <TableCell>{member.phone}</TableCell>
                   <TableCell>{member.cnic}</TableCell>
+                  <TableCell>{(member as any).address || "—"}</TableCell>
                   <TableCell className="capitalize">{member.plan}</TableCell>
                   <TableCell>
                     {format(new Date(member.planExpiryDate), "MMM d, yyyy")}
