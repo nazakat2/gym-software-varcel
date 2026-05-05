@@ -15,6 +15,7 @@ import {
   Shield,
   Smartphone,
   ScanFace,
+  BadgeDollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/employees", label: "Employees", icon: Briefcase },
   { href: "/billing", label: "Billing", icon: Receipt },
+  { href: "/trainer-commission", label: "Trainer Commission", icon: BadgeDollarSign },
   { href: "/sales", label: "POS & Sales", icon: ShoppingCart },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/accounts", label: "Accounts", icon: Wallet },

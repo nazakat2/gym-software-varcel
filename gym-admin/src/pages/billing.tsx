@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListBilling, useMarkInvoicePaid, useCreateInvoice, useListMembers } from "@workspace/api-client-react";
+import { useListBilling, useMarkInvoicePaid, useMarkInvoiceUnpaid, useCreateInvoice, useListMembers } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ export default function Billing() {
   const { data: invoices, isLoading, refetch } = useListBilling();
   const { data: members } = useListMembers();
   const markPaid = useMarkInvoicePaid();
+  const markUnpaid = useMarkInvoiceUnpaid();
   const createInvoice = useCreateInvoice();
 
   const billingInvoices = Array.isArray(invoices) ? invoices : [];
@@ -41,6 +42,16 @@ export default function Billing() {
       refetch();
     } catch {
       toast({ title: "Failed to mark as paid", variant: "destructive" });
+    }
+  };
+
+  const handleMarkUnpaid = async (id: number) => {
+    try {
+      await markUnpaid.mutateAsync({ id });
+      toast({ title: "Invoice marked as unpaid" });
+      refetch();
+    } catch {
+      toast({ title: "Failed to mark as unpaid", variant: "destructive" });
     }
   };
 
@@ -168,9 +179,13 @@ export default function Billing() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {inv.status === "unpaid" && (
+                        {inv.status === "unpaid" ? (
                           <Button size="sm" variant="outline" onClick={() => handleMarkPaid(inv.id)} disabled={markPaid.isPending}>
                             Mark Paid
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleMarkUnpaid(inv.id)} disabled={markUnpaid.isPending}>
+                            Mark Unpaid
                           </Button>
                         )}
                       </TableCell>

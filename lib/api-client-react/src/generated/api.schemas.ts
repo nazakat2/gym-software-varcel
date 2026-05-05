@@ -504,3 +504,146 @@ export type GetFinancialReportParams = {
 export type GetAttendanceReportParams = {
   month?: string;
 };
+
+// ── Trainer Commission Types ──────────────────────────────────────────────
+
+export type CommissionType = (typeof CommissionType)[keyof typeof CommissionType];
+export const CommissionType = {
+  percentage: "percentage",
+  fixed: "fixed",
+} as const;
+
+export type SubscriptionStatus = (typeof SubscriptionStatus)[keyof typeof SubscriptionStatus];
+export const SubscriptionStatus = {
+  active: "active",
+  expired: "expired",
+  cancelled: "cancelled",
+} as const;
+
+export interface Plan {
+  id: number;
+  name: string;
+  totalFee: number;
+  commissionType: CommissionType;
+  commissionValue: number;
+  description?: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreatePlanBody {
+  name: string;
+  totalFee: number;
+  commissionType: CommissionType;
+  commissionValue: number;
+  description?: string | null;
+  isActive?: boolean;
+}
+
+export interface ClientSubscription {
+  id: number;
+  memberId: number;
+  trainerId: number;
+  planId?: number | null;
+  startDate: string;
+  endDate?: string | null;
+  purpose?: string | null;
+  status: SubscriptionStatus;
+  memberName: string;
+  trainerName: string;
+  planName?: string | null;
+  createdAt: string;
+}
+
+export interface CreateClientSubscriptionBody {
+  memberId: number;
+  trainerId: number;
+  planId?: number | null;
+  startDate: string;
+  endDate?: string | null;
+  purpose?: string | null;
+  status?: SubscriptionStatus;
+}
+
+export interface UpdateClientSubscriptionBody {
+  planId?: number | null;
+  startDate?: string;
+  endDate?: string | null;
+  purpose?: string | null;
+  status?: SubscriptionStatus;
+}
+
+export interface TrainerCommissionSummary {
+  trainerId: number;
+  trainerName: string;
+  phone: string;
+  email?: string | null;
+  commission: number;
+  totalEarnings: number;
+  monthlyEarnings: number;
+  totalClients: number;
+  activeClients: number;
+  status: string;
+}
+
+export interface TrainerEarning {
+  id: number;
+  trainerId: number;
+  sourcePaymentId: number;
+  subscriptionId?: number | null;
+  amount: number;
+  date: string;
+  memberName: string;
+  invoiceAmount: number;
+  invoicePlan: string;
+  createdAt: string;
+}
+
+export interface TrainerCommissionDetail {
+  trainer: {
+    id: number;
+    name: string;
+    phone: string;
+    email?: string | null;
+    commission: number;
+    totalEarnings: number;
+    status: string;
+  };
+  subscriptions: Array<ClientSubscription & {
+    memberPhone: string;
+    commissionType?: string | null;
+    commissionValue?: number | null;
+  }>;
+  earnings: TrainerEarning[];
+  stats: {
+    totalClients: number;
+    activeClients: number;
+    totalEarnings: number;
+    monthlyEarnings: number;
+  };
+}
+
+export interface MonthlyCommissionReport {
+  month: string;
+  totalGymRevenue: number;
+  totalCommissions: number;
+  trainerBreakdown: Array<{
+    trainerId: number;
+    trainerName: string;
+    amount: number;
+  }>;
+}
+
+export type ListClientSubscriptionsParams = {
+  trainerId?: number;
+  memberId?: number;
+  status?: SubscriptionStatus | "all";
+};
+
+export type GetMonthlyReportParams = {
+  month?: string;
+};
+
+export type GetTrainerEarningsParams = {
+  month?: string;
+};

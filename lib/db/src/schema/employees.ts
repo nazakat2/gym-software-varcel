@@ -11,6 +11,7 @@ export const employeesTable = pgTable("employees", {
   email: text("email"),
   salary: numeric("salary", { precision: 10, scale: 2 }).notNull(),
   commission: numeric("commission", { precision: 10, scale: 2 }).default("0"),
+  totalEarnings: numeric("total_earnings", { precision: 12, scale: 2 }).default("0"),
   assignedMembers: integer("assigned_members").default(0),
   address: text("home_address"),
   joinDate: text("join_date").notNull(),

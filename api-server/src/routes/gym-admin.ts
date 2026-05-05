@@ -25,6 +25,7 @@ import {
   appAnnouncementsTable, appClassesTable, appWorkoutPlansTable, appWorkoutExercisesTable,
   appDietPlansTable, appDietMealsTable, appOnboardingSlidesTable,
   memberHealthTable, memberNotesTable, membershipHistoryTable,
+  plansTable, clientSubscriptionsTable, trainerEarningsTable,
 } from "@workspace/db";
 import { eq, desc, asc, and, like, or, sql, gte, lte, count } from "drizzle-orm";
 import { otpsTable } from "@workspace/db";
@@ -1661,11 +1662,108 @@ router.post("/billing", async (req, res) => {
 router.post("/billing/:id/pay", async (req, res) => {
   const id = parseInt(req.params.id as string);
   const { paymentMethod } = req.body;
-  const [updated] = await db.update(invoicesTable).set({ status: "paid", paidDate: today(), paymentMethod }).where(eq(invoicesTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ message: "Not found" });
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!invoice) return res.status(404).json({ message: "Not found" });
+
+  const totalAmount = parseFloat(invoice.amount as string);
+  let trainerCommission = 0;
+  let gymRevenue = totalAmount;
+  let subscriptionId: number | null = null;
+
+  const [activeSub] = await db.select().from(clientSubscriptionsTable)
+    .where(and(eq(clientSubscriptionsTable.memberId, invoice.memberId), eq(clientSubscriptionsTable.status, "active")))
+    .orderBy(desc(clientSubscriptionsTable.createdAt));
+
+  if (activeSub) {
+    subscriptionId = activeSub.id;
+    let commissionValue = 0;
+
+    if (activeSub.planId) {
+      const [plan] = await db.select().from(plansTable).where(eq(plansTable.id, activeSub.planId));
+      if (plan) {
+        const cv = parseFloat(plan.commissionValue as string);
+        commissionValue = plan.commissionType === "percentage"
+          ? totalAmount * cv / 100
+          : cv;
+      }
+    } else {
+      const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, activeSub.trainerId));
+      if (trainer && trainer.commission) {
+        commissionValue = parseFloat(trainer.commission as string);
+      }
+    }
+
+    if (commissionValue > 0) {
+      trainerCommission = Math.round(commissionValue * 100) / 100;
+      gymRevenue = Math.round((totalAmount - trainerCommission) * 100) / 100;
+
+      const existingEarning = await db.select().from(trainerEarningsTable).where(eq(trainerEarningsTable.sourcePaymentId, id));
+      if (existingEarning.length === 0) {
+        await db.insert(trainerEarningsTable).values({
+          trainerId: activeSub.trainerId,
+          sourcePaymentId: id,
+          subscriptionId: activeSub.id,
+          amount: String(trainerCommission),
+          date: today(),
+        });
+
+        const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, activeSub.trainerId));
+        if (trainer) {
+          const currentEarnings = parseFloat((trainer.totalEarnings as string) || "0");
+          await db.update(employeesTable)
+            .set({ totalEarnings: String(currentEarnings + trainerCommission) })
+            .where(eq(employeesTable.id, activeSub.trainerId));
+        }
+      }
+    }
+  }
+
+  const [updated] = await db.update(invoicesTable).set({
+    status: "paid",
+    paidDate: today(),
+    paymentMethod,
+    subscriptionId,
+    trainerCommission: String(trainerCommission),
+    gymRevenue: String(gymRevenue),
+  }).where(eq(invoicesTable.id, id)).returning();
+
+  const [member] = await db.select().from(membersTable).where(eq(membersTable.id, updated.memberId));
+  res.json({
+    ...updated,
+    memberName: member?.name ?? "Unknown",
+    amount: totalAmount,
+    trainerCommission,
+    gymRevenue,
+  });
+});
+
+router.post("/billing/:id/unpay", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!invoice) return res.status(404).json({ message: "Not found" });
+  if (invoice.status !== "paid") return res.status(400).json({ message: "Invoice already unpaid" });
+
+  const earning = await db.select().from(trainerEarningsTable).where(eq(trainerEarningsTable.sourcePaymentId, id));
+  if (earning.length > 0) {
+    const commissionAmount = parseFloat(earning[0].amount as string);
+    const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, earning[0].trainerId));
+    if (trainer) {
+      const cur = parseFloat((trainer.totalEarnings as string) || "0");
+      await db.update(employeesTable)
+        .set({ totalEarnings: String(Math.max(0, cur - commissionAmount)) })
+        .where(eq(employeesTable.id, earning[0].trainerId));
+    }
+    await db.delete(trainerEarningsTable).where(eq(trainerEarningsTable.sourcePaymentId, id));
+  }
+
+  const [updated] = await db.update(invoicesTable)
+    .set({ status: "unpaid", paidDate: null, paymentMethod: null, trainerCommission: null, gymRevenue: null })
+    .where(eq(invoicesTable.id, id)).returning();
+
   const [member] = await db.select().from(membersTable).where(eq(membersTable.id, updated.memberId));
   res.json({ ...updated, memberName: member?.name ?? "Unknown", amount: parseFloat(updated.amount as string) });
-});
+}));
 
 router.get("/billing/dues-summary", async (_req, res) => {
   const invoices = await db.select().from(invoicesTable);
@@ -2887,6 +2985,394 @@ router.delete("/app-content/diet-plans/:id", async (req, res) => {
   await db.delete(appDietPlansTable).where(eq(appDietPlansTable.id, id));
   res.json({ message: "Deleted" });
 });
+
+// ── Plans ─────────────────────────────────────────────────────────────────
+router.get("/plans", asyncHandler(async (_req, res) => {
+  const rows = await db.select().from(plansTable).orderBy(desc(plansTable.createdAt));
+  res.json(rows.map(r => ({
+    ...r,
+    totalFee: parseFloat(r.totalFee as string),
+    commissionValue: parseFloat(r.commissionValue as string),
+  })));
+}));
+
+router.post("/plans", asyncHandler(async (req, res) => {
+  const { name, totalFee, commissionType, commissionValue, description, isActive } = req.body;
+  if (!name || totalFee === undefined) return res.status(400).json({ message: "Name and totalFee are required" });
+  const [row] = await db.insert(plansTable).values({
+    name,
+    totalFee: String(totalFee),
+    commissionType: commissionType || "percentage",
+    commissionValue: String(commissionValue || 0),
+    description: description || null,
+    isActive: isActive !== false,
+  }).returning();
+  res.status(201).json({ ...row, totalFee: parseFloat(row.totalFee as string), commissionValue: parseFloat(row.commissionValue as string) });
+}));
+
+router.put("/plans/:id", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const { name, totalFee, commissionType, commissionValue, description, isActive } = req.body;
+  const [row] = await db.update(plansTable).set({
+    ...(name !== undefined && { name }),
+    ...(totalFee !== undefined && { totalFee: String(totalFee) }),
+    ...(commissionType !== undefined && { commissionType }),
+    ...(commissionValue !== undefined && { commissionValue: String(commissionValue) }),
+    ...(description !== undefined && { description }),
+    ...(isActive !== undefined && { isActive }),
+  }).where(eq(plansTable.id, id)).returning();
+  if (!row) return res.status(404).json({ message: "Not found" });
+  res.json({ ...row, totalFee: parseFloat(row.totalFee as string), commissionValue: parseFloat(row.commissionValue as string) });
+}));
+
+router.delete("/plans/:id", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  await db.delete(plansTable).where(eq(plansTable.id, id));
+  res.json({ message: "Deleted" });
+}));
+
+// ── Client Subscriptions ──────────────────────────────────────────────────
+router.get("/client-subscriptions", asyncHandler(async (req, res) => {
+  const { trainerId, memberId, status } = req.query as Record<string, string>;
+
+  const rows = await db.select({
+    sub: clientSubscriptionsTable,
+    memberName: membersTable.name,
+    trainerName: employeesTable.name,
+    planName: plansTable.name,
+  }).from(clientSubscriptionsTable)
+    .leftJoin(membersTable, eq(clientSubscriptionsTable.memberId, membersTable.id))
+    .leftJoin(employeesTable, eq(clientSubscriptionsTable.trainerId, employeesTable.id))
+    .leftJoin(plansTable, eq(clientSubscriptionsTable.planId, plansTable.id))
+    .orderBy(desc(clientSubscriptionsTable.createdAt));
+
+  let result = rows.map(r => ({
+    ...r.sub,
+    memberName: r.memberName ?? "Unknown",
+    trainerName: r.trainerName ?? "Unknown",
+    planName: r.planName ?? null,
+  }));
+
+  if (trainerId) result = result.filter(r => r.trainerId === parseInt(trainerId));
+  if (memberId) result = result.filter(r => r.memberId === parseInt(memberId));
+  if (status && status !== "all") result = result.filter(r => r.status === status);
+
+  res.json(result);
+}));
+
+router.post("/client-subscriptions", asyncHandler(async (req, res) => {
+  const { memberId, trainerId, planId, startDate, endDate, purpose, status } = req.body;
+  if (!memberId || !trainerId || !startDate) {
+    return res.status(400).json({ message: "memberId, trainerId, and startDate are required" });
+  }
+  const [row] = await db.insert(clientSubscriptionsTable).values({
+    memberId,
+    trainerId,
+    planId: planId || null,
+    startDate,
+    endDate: endDate || null,
+    purpose: purpose || null,
+    status: status || "active",
+  }).returning();
+
+  await db.update(membersTable).set({ assignedTrainerId: trainerId }).where(eq(membersTable.id, memberId));
+
+  const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
+  const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, trainerId));
+  const plan = planId ? await db.select().from(plansTable).where(eq(plansTable.id, planId)).then(r => r[0]) : null;
+
+  res.status(201).json({
+    ...row,
+    memberName: member?.name ?? "Unknown",
+    trainerName: trainer?.name ?? "Unknown",
+    planName: plan?.name ?? null,
+  });
+}));
+
+router.put("/client-subscriptions/:id", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const { planId, startDate, endDate, purpose, status } = req.body;
+  const [row] = await db.update(clientSubscriptionsTable).set({
+    ...(planId !== undefined && { planId: planId || null }),
+    ...(startDate !== undefined && { startDate }),
+    ...(endDate !== undefined && { endDate: endDate || null }),
+    ...(purpose !== undefined && { purpose: purpose || null }),
+    ...(status !== undefined && { status }),
+  }).where(eq(clientSubscriptionsTable.id, id)).returning();
+  if (!row) return res.status(404).json({ message: "Not found" });
+  res.json(row);
+}));
+
+router.delete("/client-subscriptions/:id", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  await db.delete(clientSubscriptionsTable).where(eq(clientSubscriptionsTable.id, id));
+  res.json({ message: "Deleted" });
+}));
+
+// ── Trainer Commission Demo Seed ──────────────────────────────────────────
+router.post("/trainer-commissions/seed-demo", asyncHandler(async (_req, res) => {
+  const trainers = await db.select().from(employeesTable).where(eq(employeesTable.role, "trainer"));
+  const members = await db.select().from(membersTable).limit(5);
+
+  if (trainers.length === 0) return res.status(400).json({ message: "Koi trainer nahi mila. Pehle Employees mein trainer add karein." });
+  if (members.length === 0) return res.status(400).json({ message: "Koi member nahi mila. Pehle Members mein member add karein." });
+
+  const existingPlans = await db.select().from(plansTable);
+  let plan1Id: number, plan2Id: number, plan3Id: number;
+
+  if (existingPlans.length >= 3) {
+    plan1Id = existingPlans[0].id;
+    plan2Id = existingPlans[1].id;
+    plan3Id = existingPlans[2].id;
+  } else {
+    const [p1] = await db.insert(plansTable).values({ name: "Personal Training - Monthly", totalFee: "8000", commissionType: "percentage", commissionValue: "30", description: "Monthly personal training plan", isActive: true }).returning();
+    const [p2] = await db.insert(plansTable).values({ name: "Weight Loss Program", totalFee: "12000", commissionType: "percentage", commissionValue: "25", description: "3-month weight loss program", isActive: true }).returning();
+    const [p3] = await db.insert(plansTable).values({ name: "Muscle Gain Package", totalFee: "6000", commissionType: "fixed", commissionValue: "1500", description: "Fixed commission plan", isActive: true }).returning();
+    plan1Id = p1.id; plan2Id = p2.id; plan3Id = p3.id;
+  }
+
+  const trainer = trainers[0];
+  const trainer2 = trainers[1] ?? trainers[0];
+
+  const existingSubs = await db.select().from(clientSubscriptionsTable);
+
+  if (existingSubs.length === 0) {
+    const purposes = ["Weight Loss", "Muscle Gain", "General Fitness", "Cardio Improvement", "Strength Training"];
+    for (let i = 0; i < Math.min(members.length, 3); i++) {
+      const planId = i === 0 ? plan1Id : i === 1 ? plan2Id : plan3Id;
+      const trainerId = i % 2 === 0 ? trainer.id : trainer2.id;
+      await db.insert(clientSubscriptionsTable).values({
+        memberId: members[i].id,
+        trainerId,
+        planId,
+        startDate: `2025-0${i + 1}-01`,
+        endDate: `2025-0${i + 3}-01`,
+        purpose: purposes[i],
+        status: "active",
+      });
+      await db.update(membersTable).set({ assignedTrainerId: trainerId }).where(eq(membersTable.id, members[i].id));
+    }
+  }
+
+  const pastEarnings = [
+    { trainerId: trainer.id, amount: 2400, date: "2025-01-15", invoicePlan: "monthly" },
+    { trainerId: trainer.id, amount: 3000, date: "2025-02-10", invoicePlan: "quarterly" },
+    { trainerId: trainer2.id, amount: 1500, date: "2025-01-20", invoicePlan: "monthly" },
+    { trainerId: trainer2.id, amount: 1500, date: "2025-02-18", invoicePlan: "monthly" },
+    { trainerId: trainer.id, amount: 2400, date: "2025-03-05", invoicePlan: "monthly" },
+  ];
+
+  let inserted = 0;
+  for (const e of pastEarnings) {
+    const [fakeInv] = await db.insert(invoicesTable).values({
+      memberId: members[0].id,
+      amount: String(e.amount / 0.3),
+      plan: e.invoicePlan,
+      dueDate: e.date,
+      paidDate: e.date,
+      status: "paid",
+      paymentMethod: "cash",
+      trainerCommission: String(e.amount),
+      gymRevenue: String(Math.round((e.amount / 0.3 - e.amount) * 100) / 100),
+    }).returning();
+
+    const exists = await db.select().from(trainerEarningsTable).where(eq(trainerEarningsTable.sourcePaymentId, fakeInv.id));
+    if (exists.length === 0) {
+      await db.insert(trainerEarningsTable).values({
+        trainerId: e.trainerId,
+        sourcePaymentId: fakeInv.id,
+        amount: String(e.amount),
+        date: e.date,
+      });
+      inserted++;
+    }
+
+    const [tr] = await db.select().from(employeesTable).where(eq(employeesTable.id, e.trainerId));
+    if (tr) {
+      const cur = parseFloat((tr.totalEarnings as string) || "0");
+      await db.update(employeesTable).set({ totalEarnings: String(cur + e.amount) }).where(eq(employeesTable.id, e.trainerId));
+    }
+  }
+
+  res.json({ message: `Demo data add ho gaya! ${existingPlans.length < 3 ? "3 plans, " : ""}subscriptions aur ${inserted} earning records create kiye.` });
+}));
+
+// ── Trainer Commissions ───────────────────────────────────────────────────
+router.get("/trainer-commissions", asyncHandler(async (_req, res) => {
+  const trainers = await db.select().from(employeesTable).where(eq(employeesTable.role, "trainer"));
+
+  const now = today();
+  const monthStart = now.slice(0, 7) + "-01";
+
+  const result = await Promise.all(trainers.map(async (trainer) => {
+    const subs = await db.select().from(clientSubscriptionsTable)
+      .where(eq(clientSubscriptionsTable.trainerId, trainer.id));
+
+    const activeSubs = subs.filter(s => s.status === "active");
+
+    const earnings = await db.select().from(trainerEarningsTable)
+      .where(eq(trainerEarningsTable.trainerId, trainer.id));
+
+    const totalEarnings = earnings.reduce((s, e) => s + parseFloat(e.amount as string), 0);
+    const monthlyEarnings = earnings
+      .filter(e => e.date >= monthStart)
+      .reduce((s, e) => s + parseFloat(e.amount as string), 0);
+
+    return {
+      trainerId: trainer.id,
+      trainerName: trainer.name,
+      phone: trainer.phone,
+      email: trainer.email,
+      commission: parseFloat((trainer.commission as string) || "0"),
+      totalEarnings: Math.round(totalEarnings * 100) / 100,
+      monthlyEarnings: Math.round(monthlyEarnings * 100) / 100,
+      totalClients: subs.length,
+      activeClients: activeSubs.length,
+      status: trainer.status,
+    };
+  }));
+
+  res.json(result);
+}));
+
+router.get("/trainer-commissions/reports/monthly", asyncHandler(async (req, res) => {
+  const { month } = req.query as Record<string, string>;
+  const period = month || today().slice(0, 7);
+  const monthStart = period + "-01";
+  const year = parseInt(period.slice(0, 4));
+  const mon = parseInt(period.slice(5, 7));
+  const nextMonth = mon === 12
+    ? `${year + 1}-01-01`
+    : `${year}-${String(mon + 1).padStart(2, "0")}-01`;
+
+  const earnings = await db.select({
+    earning: trainerEarningsTable,
+    trainerName: employeesTable.name,
+  }).from(trainerEarningsTable)
+    .leftJoin(employeesTable, eq(trainerEarningsTable.trainerId, employeesTable.id))
+    .where(and(gte(trainerEarningsTable.date, monthStart), lte(trainerEarningsTable.date, nextMonth)));
+
+  const paidInvoices = await db.select().from(invoicesTable)
+    .where(and(eq(invoicesTable.status, "paid"), gte(invoicesTable.paidDate as any, monthStart)));
+
+  const totalGymRevenue = paidInvoices.reduce((s, i) => {
+    const gr = i.gymRevenue ? parseFloat(i.gymRevenue as string) : parseFloat(i.amount as string);
+    return s + gr;
+  }, 0);
+
+  const totalCommissions = earnings.reduce((s, e) => s + parseFloat(e.earning.amount as string), 0);
+
+  const byTrainer = earnings.reduce<Record<number, { trainerName: string; amount: number }>>((acc, e) => {
+    const tid = e.earning.trainerId;
+    if (!acc[tid]) acc[tid] = { trainerName: e.trainerName ?? "Unknown", amount: 0 };
+    acc[tid].amount += parseFloat(e.earning.amount as string);
+    return acc;
+  }, {});
+
+  res.json({
+    month: period,
+    totalGymRevenue: Math.round(totalGymRevenue * 100) / 100,
+    totalCommissions: Math.round(totalCommissions * 100) / 100,
+    trainerBreakdown: Object.entries(byTrainer).map(([id, data]) => ({
+      trainerId: parseInt(id),
+      trainerName: data.trainerName,
+      amount: Math.round(data.amount * 100) / 100,
+    })),
+  });
+}));
+
+router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
+  const trainerId = parseInt(req.params.trainerId as string);
+  const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, trainerId));
+  if (!trainer) return res.status(404).json({ message: "Trainer not found" });
+
+  const subs = await db.select({
+    sub: clientSubscriptionsTable,
+    memberName: membersTable.name,
+    memberPhone: membersTable.phone,
+    planName: plansTable.name,
+    commissionType: plansTable.commissionType,
+    commissionValue: plansTable.commissionValue,
+  }).from(clientSubscriptionsTable)
+    .leftJoin(membersTable, eq(clientSubscriptionsTable.memberId, membersTable.id))
+    .leftJoin(plansTable, eq(clientSubscriptionsTable.planId, plansTable.id))
+    .where(eq(clientSubscriptionsTable.trainerId, trainerId))
+    .orderBy(desc(clientSubscriptionsTable.createdAt));
+
+  const now = today();
+  const monthStart = now.slice(0, 7) + "-01";
+
+  const earnings = await db.select({
+    earning: trainerEarningsTable,
+    memberName: membersTable.name,
+  }).from(trainerEarningsTable)
+    .leftJoin(invoicesTable, eq(trainerEarningsTable.sourcePaymentId, invoicesTable.id))
+    .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
+    .where(eq(trainerEarningsTable.trainerId, trainerId))
+    .orderBy(desc(trainerEarningsTable.createdAt));
+
+  const totalEarnings = earnings.reduce((s, e) => s + parseFloat(e.earning.amount as string), 0);
+  const monthlyEarnings = earnings
+    .filter(e => e.earning.date >= monthStart)
+    .reduce((s, e) => s + parseFloat(e.earning.amount as string), 0);
+
+  res.json({
+    trainer: {
+      ...trainer,
+      commission: parseFloat((trainer.commission as string) || "0"),
+      totalEarnings: parseFloat((trainer.totalEarnings as string) || "0"),
+    },
+    subscriptions: subs.map(s => ({
+      ...s.sub,
+      memberName: s.memberName ?? "Unknown",
+      memberPhone: s.memberPhone ?? "",
+      planName: s.planName ?? null,
+      commissionType: s.commissionType ?? null,
+      commissionValue: s.commissionValue ? parseFloat(s.commissionValue as string) : null,
+    })),
+    earnings: earnings.map(e => ({
+      ...e.earning,
+      amount: parseFloat(e.earning.amount as string),
+      memberName: e.memberName ?? "Unknown",
+    })),
+    stats: {
+      totalClients: subs.length,
+      activeClients: subs.filter(s => s.sub.status === "active").length,
+      totalEarnings: Math.round(totalEarnings * 100) / 100,
+      monthlyEarnings: Math.round(monthlyEarnings * 100) / 100,
+    },
+  });
+}));
+
+router.get("/trainer-commissions/:trainerId/earnings", asyncHandler(async (req, res) => {
+  const trainerId = parseInt(req.params.trainerId as string);
+  const { month } = req.query as Record<string, string>;
+
+  const rows = await db.select({
+    earning: trainerEarningsTable,
+    memberName: membersTable.name,
+    invoiceAmount: invoicesTable.amount,
+    invoicePlan: invoicesTable.plan,
+  }).from(trainerEarningsTable)
+    .leftJoin(invoicesTable, eq(trainerEarningsTable.sourcePaymentId, invoicesTable.id))
+    .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
+    .where(eq(trainerEarningsTable.trainerId, trainerId))
+    .orderBy(desc(trainerEarningsTable.createdAt));
+
+  let result = rows.map(r => ({
+    ...r.earning,
+    amount: parseFloat(r.earning.amount as string),
+    memberName: r.memberName ?? "Unknown",
+    invoiceAmount: r.invoiceAmount ? parseFloat(r.invoiceAmount as string) : 0,
+    invoicePlan: r.invoicePlan ?? "",
+  }));
+
+  if (month) {
+    result = result.filter(r => r.date.startsWith(month));
+  }
+
+  res.json(result);
+}));
 
 // ── Onboarding Slides ──────────────────────────────────────────────────────
 router.get("/app-content/onboarding-slides", async (_req, res) => {

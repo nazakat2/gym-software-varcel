@@ -12,6 +12,9 @@ export const invoicesTable = pgTable("invoices", {
   paidDate: text("paid_date"),
   status: text("status").notNull().default("unpaid"),
   paymentMethod: text("payment_method"),
+  subscriptionId: integer("subscription_id"),
+  trainerCommission: numeric("trainer_commission", { precision: 10, scale: 2 }),
+  gymRevenue: numeric("gym_revenue", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

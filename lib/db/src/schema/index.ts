@@ -5,6 +5,7 @@ export * from "./measurements";
 export * from "./attendance";
 export * from "./employees";
 export * from "./billing";
+export * from "./trainer-commission";
 export * from "./inventory";
 export * from "./accounts";
 export * from "./admin-users";

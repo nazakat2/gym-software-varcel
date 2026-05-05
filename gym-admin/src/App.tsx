@@ -22,6 +22,8 @@ import AdminUsers from "@/pages/admin-users";
 import AppContent from "@/pages/app-content";
 import BusinessSettings from "@/pages/business-settings";
 import AISecurity from "@/pages/ai-security";
+import TrainerCommission from "@/pages/trainer-commission";
+import TrainerCommissionDetail from "@/pages/trainer-commission-detail";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -65,6 +67,8 @@ function ProtectedRouter() {
         <Route path="/attendance" component={Attendance} />
         <Route path="/employees" component={Employees} />
         <Route path="/billing" component={Billing} />
+        <Route path="/trainer-commission" component={TrainerCommission} />
+        <Route path="/trainer-commission/:trainerId" component={TrainerCommissionDetail} />
         <Route path="/sales" component={Sales} />
         <Route path="/inventory" component={Inventory} />
         <Route path="/accounts" component={Accounts} />
