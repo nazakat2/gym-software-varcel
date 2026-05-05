@@ -51,4 +51,4 @@ build_error.log
 .vercel
 .env*.local
 .env.prod
-api/
+# api/ is intentionally tracked (stub for Vercel function validation)
