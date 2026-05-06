@@ -936,7 +936,17 @@ components:
           type: integer
         lowStockItems:
           type: integer
-      required: [totalMembers, activeMembers, expiredMembers, todayAttendance, monthlyRevenue, unpaidDues, totalEmployees, lowStockItems]
+      required:
+        [
+          totalMembers,
+          activeMembers,
+          expiredMembers,
+          todayAttendance,
+          monthlyRevenue,
+          unpaidDues,
+          totalEmployees,
+          lowStockItems,
+        ]
 
     Activity:
       type: object
@@ -1003,7 +1013,18 @@ components:
           enum: [active, expired]
         createdAt:
           type: string
-      required: [id, name, phone, cnic, plan, planStartDate, planExpiryDate, status, createdAt]
+      required:
+        [
+          id,
+          name,
+          phone,
+          cnic,
+          plan,
+          planStartDate,
+          planExpiryDate,
+          status,
+          createdAt,
+        ]
 
     CreateMemberBody:
       type: object
@@ -1134,7 +1155,8 @@ components:
         status:
           type: string
           enum: [active, inactive]
-      required: [id, name, role, phone, salary, assignedMembers, joinDate, status]
+      required:
+        [id, name, role, phone, salary, assignedMembers, joinDate, status]
 
     CreateEmployeeBody:
       type: object
@@ -1278,7 +1300,8 @@ components:
         customerName:
           type: string
           nullable: true
-      required: [id, productId, productName, quantity, totalAmount, status, date]
+      required:
+        [id, productId, productName, quantity, totalAmount, status, date]
 
     CreateSaleBody:
       type: object
@@ -1500,7 +1523,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RevenuePoint"
-      required: [month, totalRevenue, totalExpenses, netProfit, membershipIncome, salesIncome, breakdown]
+      required:
+        [
+          month,
+          totalRevenue,
+          totalExpenses,
+          netProfit,
+          membershipIncome,
+          salesIncome,
+          breakdown,
+        ]
 
     AttendanceReport:
       type: object
@@ -1519,7 +1551,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AttendancePoint"
-      required: [month, totalVisits, uniqueMembers, avgDailyVisits, peakDay, chart]
+      required:
+        [month, totalVisits, uniqueMembers, avgDailyVisits, peakDay, chart]
 
     MemberReport:
       type: object
@@ -1536,4 +1569,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PieSlice"
-      required: [totalMembers, newThisMonth, renewalsThisMonth, expiringThisWeek, byPlan]
+      required:
+        [
+          totalMembers,
+          newThisMonth,
+          renewalsThisMonth,
+          expiringThisWeek,
+          byPlan,
+        ]

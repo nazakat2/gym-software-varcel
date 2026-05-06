@@ -315,6 +315,7 @@ export default function TrainerCommission() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">ID</TableHead>
                     <TableHead>Trainer</TableHead>
                     <TableHead>Total Clients</TableHead>
                     <TableHead>Active Clients</TableHead>
@@ -327,14 +328,15 @@ export default function TrainerCommission() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
                     </TableRow>
                   ) : filteredTrainers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No trainers found</TableCell>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No trainers found</TableCell>
                     </TableRow>
                   ) : filteredTrainers.map((t) => (
                     <TableRow key={t.trainerId}>
+                      <TableCell className="text-muted-foreground text-sm">{t.trainerId}</TableCell>
                       <TableCell>
                         <div className="font-medium">{t.trainerName}</div>
                         <div className="text-xs text-muted-foreground">{t.phone}</div>
@@ -592,7 +594,7 @@ export default function TrainerCommission() {
               <Input type="number" value={planForm.commissionValue} onChange={(e) => setPlanForm({ ...planForm, commissionValue: e.target.value })} placeholder={planForm.commissionType === "percentage" ? "e.g. 30" : "e.g. 1500"} />
             </div>
             <div className="space-y-1">
-              <Label>Description (optional)</Label>
+              <Label>Description</Label>
               <Input value={planForm.description} onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })} placeholder="Brief description" />
             </div>
             <div className="flex items-center gap-2">
@@ -637,7 +639,7 @@ export default function TrainerCommission() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Plan (optional)</Label>
+              <Label>Plan</Label>
               <Select value={subForm.planId || "none"} onValueChange={(v) => setSubForm({ ...subForm, planId: v === "none" ? "" : v })}>
                 <SelectTrigger><SelectValue placeholder="No plan (use trainer commission)" /></SelectTrigger>
                 <SelectContent>
@@ -658,7 +660,7 @@ export default function TrainerCommission() {
                 <Input type="date" value={subForm.startDate} onChange={(e) => setSubForm({ ...subForm, startDate: e.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label>End Date (optional)</Label>
+                <Label>End Date</Label>
                 <Input type="date" value={subForm.endDate} onChange={(e) => setSubForm({ ...subForm, endDate: e.target.value })} />
               </div>
             </div>

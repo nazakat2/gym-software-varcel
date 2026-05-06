@@ -1212,6 +1212,8 @@ router.get("/measurements", asyncHandler(async (req, res) => {
   const measurements = await db.select({
     measurement: measurementsTable,
     memberName: membersTable.name,
+    memberDob: membersTable.dob,
+    memberGender: membersTable.gender,
   }).from(measurementsTable)
     .leftJoin(membersTable, eq(measurementsTable.memberId, membersTable.id))
     .where(memberId ? eq(measurementsTable.memberId, parseInt(memberId)) : undefined)
@@ -1220,10 +1222,14 @@ router.get("/measurements", asyncHandler(async (req, res) => {
   res.json(measurements.map(r => ({
     ...r.measurement,
     memberName: r.memberName ?? "Unknown",
+    memberDob: r.memberDob ?? null,
+    memberGender: r.memberGender ?? "male",
     weight: parseFloat(r.measurement.weight as string),
     height: parseFloat(r.measurement.height as string),
     bmi: parseFloat(r.measurement.bmi as string),
     bodyFat: r.measurement.bodyFat ? parseFloat(r.measurement.bodyFat as string) : null,
+    beforePhoto: r.measurement.beforePhoto ?? null,
+    afterPhoto: r.measurement.afterPhoto ?? null,
   })));
 }));
 
@@ -1304,6 +1310,40 @@ router.post("/measurements", async (req, res) => {
     chest: chest ?? null, waist: waist ?? null, arms: arms ?? null, hips: hips ?? null,
   });
 });
+
+router.patch("/measurements/:id/photos", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const { beforePhoto, afterPhoto } = req.body as { beforePhoto?: string | null; afterPhoto?: string | null };
+  const [updated] = await db.update(measurementsTable)
+    .set({
+      ...(beforePhoto !== undefined ? { beforePhoto } : {}),
+      ...(afterPhoto !== undefined ? { afterPhoto } : {}),
+    })
+    .where(eq(measurementsTable.id, id))
+    .returning();
+  res.json(updated);
+}));
+
+router.put("/measurements/:id", asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const { weight, height, bodyFat, chest, waist, arms, hips, notes } = req.body;
+  const bmi = calcBMI(weight, height);
+  const [updated] = await db.update(measurementsTable)
+    .set({
+      weight: String(weight), height: String(height), bmi: String(bmi),
+      bodyFat: bodyFat ? String(bodyFat) : null,
+      chest: chest ? String(chest) : null, waist: waist ? String(waist) : null,
+      arms: arms ? String(arms) : null, hips: hips ? String(hips) : null,
+      notes: notes || null,
+    })
+    .where(eq(measurementsTable.id, id))
+    .returning();
+  res.json({
+    ...updated,
+    weight: parseFloat(updated.weight as string), height: parseFloat(updated.height as string),
+    bmi: parseFloat(updated.bmi as string),
+  });
+}));
 
 router.delete("/measurements/:id", async (req, res) => {
   await db.delete(measurementsTable).where(eq(measurementsTable.id, parseInt(req.params.id as string)));
@@ -3305,6 +3345,8 @@ router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
   const earnings = await db.select({
     earning: trainerEarningsTable,
     memberName: membersTable.name,
+    invoiceAmount: invoicesTable.amount,
+    invoicePlan: invoicesTable.plan,
   }).from(trainerEarningsTable)
     .leftJoin(invoicesTable, eq(trainerEarningsTable.sourcePaymentId, invoicesTable.id))
     .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
@@ -3334,6 +3376,8 @@ router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
       ...e.earning,
       amount: parseFloat(e.earning.amount as string),
       memberName: e.memberName ?? "Unknown",
+      invoiceAmount: e.invoiceAmount ? parseFloat(e.invoiceAmount as string) : 0,
+      invoicePlan: e.invoicePlan ?? null,
     })),
     stats: {
       totalClients: subs.length,

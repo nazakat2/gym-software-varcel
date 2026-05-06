@@ -163,6 +163,7 @@ export default function Employees() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Phone</TableHead>
@@ -178,13 +179,14 @@ export default function Employees() {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                       No employees found
                     </TableCell>
                   </TableRow>
                 ) : (
                   filtered.map((emp) => (
                     <TableRow key={emp.id}>
+                      <TableCell className="text-muted-foreground text-sm">{emp.id}</TableCell>
                       <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">{emp.role}</Badge>
@@ -265,11 +267,11 @@ export default function Employees() {
               />
             </div>
             <div className="grid gap-2">
-              <Label>Email (optional)</Label>
+              <Label>Email </Label>
               <Input value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@gym.com" />
             </div>
             <div className="grid gap-2">
-              <Label>Address (optional)</Label>
+              <Label>Address </Label>
               <Input value={form.address} onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Street, Area, City" />
             </div>
             <div className="grid grid-cols-2 gap-4">

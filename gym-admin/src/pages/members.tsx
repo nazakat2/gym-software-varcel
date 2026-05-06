@@ -71,6 +71,7 @@ export default function Members() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12">ID</TableHead>
               <TableHead>Photo</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
@@ -85,19 +86,20 @@ export default function Members() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
+                <TableCell colSpan={10} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : filteredMembers?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
+                <TableCell colSpan={10} className="h-24 text-center">
                   No members found.
                 </TableCell>
               </TableRow>
             ) : (
               filteredMembers?.map((member) => (
                 <TableRow key={member.id}>
+                  <TableCell className="text-muted-foreground text-sm">{member.id}</TableCell>
                   <TableCell>
                     {member.photoUrl ? (
                       <img

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Users, DollarSign, TrendingUp, CalendarDays } from "lucide-react";
 
-const fmt = (n: number) => `PKR ${n.toLocaleString("en-PK", { minimumFractionDigits: 0 })}`;
+const fmt = (n: number | null | undefined) => `PKR ${(n ?? 0).toLocaleString("en-PK", { minimumFractionDigits: 0 })}`;
 
 export default function TrainerCommissionDetail() {
   const params = useParams<{ trainerId: string }>();

@@ -8,7 +8,7 @@ export const measurementsTable = pgTable("measurements", {
   memberId: integer("member_id").notNull().references(() => membersTable.id, { onDelete: "cascade" }),
   weight: numeric("weight", { precision: 5, scale: 1 }).notNull(),
   height: numeric("height", { precision: 5, scale: 1 }).notNull(),
-  bmi: numeric("bmi", { precision: 4, scale: 1 }).notNull(),
+  bmi: numeric("bmi", { precision: 6, scale: 1 }).notNull(),
   bodyFat: numeric("body_fat", { precision: 4, scale: 1 }),
   chest: numeric("chest", { precision: 5, scale: 1 }),
   waist: numeric("waist", { precision: 5, scale: 1 }),
@@ -16,6 +16,8 @@ export const measurementsTable = pgTable("measurements", {
   hips: numeric("hips", { precision: 5, scale: 1 }),
   date: text("date").notNull(),
   notes: text("notes"),
+  beforePhoto: text("before_photo"),
+  afterPhoto: text("after_photo"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
