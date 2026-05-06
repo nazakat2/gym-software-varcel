@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useListMembers, useDeleteMember } from "@workspace/api-client-react";
+import { useListMembers, useDeleteMember, useUpdateMember } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -12,8 +12,11 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Trash2, Edit, Eye } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Search, Plus, Trash2, Pencil, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -22,8 +25,16 @@ export default function Members() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [editMember, setEditMember] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", phone: "", whatsapp: "", email: "", cnic: "",
+    gender: "male", dob: "", address: "",
+    plan: "monthly", planStartDate: "", status: "active",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
   const { data: members, isLoading, refetch } = useListMembers();
   const deleteMember = useDeleteMember();
+  const updateMember = useUpdateMember();
 
   const filteredMembers = (Array.isArray(members) ? members : []).filter(
     (m) =>
@@ -42,6 +53,42 @@ export default function Members() {
       toast({ title: "Failed to delete member", variant: "destructive" });
     } finally {
       setDeleteId(null);
+    }
+  };
+
+  const openEdit = (m: any) => {
+    setEditMember(m);
+    setEditForm({
+      name: m.name ?? "",
+      phone: m.phone ?? "",
+      whatsapp: m.whatsapp ?? "",
+      email: m.email ?? "",
+      cnic: m.cnic ?? "",
+      gender: m.gender ?? "male",
+      dob: m.dob ?? "",
+      address: (m as any).address ?? "",
+      plan: m.plan ?? "monthly",
+      planStartDate: m.planStartDate ?? new Date().toISOString().split("T")[0],
+      status: m.status ?? "active",
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editMember) return;
+    if (!editForm.name || !editForm.phone || !editForm.cnic) {
+      toast({ title: "Name, phone and CNIC are required", variant: "destructive" });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await updateMember.mutateAsync({ id: editMember.id, data: editForm as any });
+      toast({ title: "Member updated" });
+      setEditMember(null);
+      refetch();
+    } catch {
+      toast({ title: "Failed to update member", variant: "destructive" });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -139,6 +186,13 @@ export default function Members() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => openEdit(member)}
+                    >
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setDeleteId(member.id)}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -150,6 +204,90 @@ export default function Members() {
           </TableBody>
         </Table>
       </div>
+      {/* Edit Member Dialog */}
+      <Dialog open={editMember !== null} onOpenChange={(o) => !o && setEditMember(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Member — {editMember?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2 col-span-2">
+                <Label>Name *</Label>
+                <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Phone *</Label>
+                <Input value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="03xx-xxxxxxx" />
+              </div>
+              <div className="grid gap-2">
+                <Label>WhatsApp</Label>
+                <Input value={editForm.whatsapp} onChange={(e) => setEditForm(f => ({ ...f, whatsapp: e.target.value }))} placeholder="03xx-xxxxxxx" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Email</Label>
+                <Input value={editForm.email} onChange={(e) => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+              </div>
+              <div className="grid gap-2">
+                <Label>CNIC *</Label>
+                <Input value={editForm.cnic} onChange={(e) => setEditForm(f => ({ ...f, cnic: e.target.value }))} placeholder="xxxxx-xxxxxxx-x" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Gender</Label>
+                <Select value={editForm.gender} onValueChange={(v) => setEditForm(f => ({ ...f, gender: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Date of Birth</Label>
+                <Input type="date" value={editForm.dob} onChange={(e) => setEditForm(f => ({ ...f, dob: e.target.value }))} />
+              </div>
+              <div className="grid gap-2 col-span-2">
+                <Label>Address</Label>
+                <Input value={editForm.address} onChange={(e) => setEditForm(f => ({ ...f, address: e.target.value }))} placeholder="Street, area, city" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Plan</Label>
+                <Select value={editForm.plan} onValueChange={(v) => setEditForm(f => ({ ...f, plan: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Plan Start Date</Label>
+                <Input type="date" value={editForm.planStartDate} onChange={(e) => setEditForm(f => ({ ...f, planStartDate: e.target.value }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Status</Label>
+                <Select value={editForm.status} onValueChange={(v) => setEditForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditMember(null)}>Cancel</Button>
+            <Button onClick={handleEditSave} disabled={savingEdit}>
+              {savingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={deleteId !== null}
         onOpenChange={(open) => !open && setDeleteId(null)}
