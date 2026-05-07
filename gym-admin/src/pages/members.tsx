@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useListMembers, useDeleteMember, useUpdateMember } from "@workspace/api-client-react";
+import { useListMembers, useDeleteMember, useUpdateMember, useListEmployees } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -30,9 +30,11 @@ export default function Members() {
     name: "", phone: "", whatsapp: "", email: "", cnic: "",
     gender: "male", dob: "", address: "",
     plan: "monthly", planStartDate: "", status: "active",
+    assignedTrainerId: "" as string,
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const { data: members, isLoading, refetch } = useListMembers();
+  const { data: employees } = useListEmployees();
   const deleteMember = useDeleteMember();
   const updateMember = useUpdateMember();
 
@@ -70,6 +72,7 @@ export default function Members() {
       plan: m.plan ?? "monthly",
       planStartDate: m.planStartDate ?? new Date().toISOString().split("T")[0],
       status: m.status ?? "active",
+      assignedTrainerId: (m as any).assignedTrainerId ? String((m as any).assignedTrainerId) : "",
     });
   };
 
@@ -81,7 +84,13 @@ export default function Members() {
     }
     setSavingEdit(true);
     try {
-      await updateMember.mutateAsync({ id: editMember.id, data: editForm as any });
+      await updateMember.mutateAsync({
+        id: editMember.id,
+        data: {
+          ...editForm,
+          assignedTrainerId: editForm.assignedTrainerId ? editForm.assignedTrainerId : null,
+        } as any,
+      });
       toast({ title: "Member updated" });
       setEditMember(null);
       refetch();
@@ -274,6 +283,18 @@ export default function Members() {
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 col-span-2">
+                <Label>Trainer</Label>
+                <Select value={editForm.assignedTrainerId || "none"} onValueChange={(v) => setEditForm(f => ({ ...f, assignedTrainerId: v === "none" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="No trainer assigned" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No trainer assigned</SelectItem>
+                    {(employees || []).map(e => (
+                      <SelectItem key={e.id} value={String(e.id)}>{e.name} ({e.role})</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
