@@ -25,6 +25,9 @@ import {
   Wallet,
   FileBarChart,
   Shield,
+  BadgeDollarSign,
+  Smartphone,
+  ScanFace,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -41,12 +44,15 @@ const navItems = [
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/employees", label: "Employees", icon: Briefcase },
   { href: "/billing", label: "Billing", icon: Receipt },
+  { href: "/trainer-commission", label: "Trainer Commission", icon: BadgeDollarSign },
   { href: "/sales", label: "POS & Sales", icon: ShoppingCart },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/reports", label: "Reports", icon: FileBarChart },
   { href: "/users", label: "Admin Users", icon: Shield },
   { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/app-content", label: "Mobile Content", icon: Smartphone },
+  { href: "/ai-security", label: "AI Security", icon: ScanFace },
   { href: "/business", label: "Business Settings", icon: Settings },
 ];
 
@@ -78,7 +84,7 @@ export function Header() {
             <span className="sr-only">Toggle navigation menu</span>
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="flex w-72 flex-col">
+        <SheetContent side="left" className="flex w-72 flex-col overflow-y-auto">
           <nav className="grid gap-2 text-lg font-medium">
             <Link href="/" className="flex items-center gap-2 text-lg font-semibold mb-4 text-primary">
               <GymLogo />

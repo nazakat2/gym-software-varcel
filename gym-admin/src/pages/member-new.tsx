@@ -38,7 +38,7 @@ export default function AddMember() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: employees } = useListEmployees();
-  const trainers = (employees || []).filter(e => e.role === "trainer" || e.role === "Trainer");
+  const trainers = (employees || []).filter(e => e.role === "trainer");
 
   const [loading, setLoading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);

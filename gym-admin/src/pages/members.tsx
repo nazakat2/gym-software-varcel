@@ -292,8 +292,8 @@ export default function Members() {
                   <SelectTrigger><SelectValue placeholder="No trainer assigned" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No trainer assigned</SelectItem>
-                    {(employees || []).map(e => (
-                      <SelectItem key={e.id} value={String(e.id)}>{e.name} ({e.role})</SelectItem>
+                    {(employees || []).filter(e => e.role === "trainer").map(e => (
+                      <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

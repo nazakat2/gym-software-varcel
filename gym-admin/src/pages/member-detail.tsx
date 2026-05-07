@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ArrowLeft, Phone, Mail, MapPin, CreditCard, User, HeartPulse, Dumbbell, MessageSquare,
   Calendar, FileText, Snowflake, RotateCcw, Plus, Trash2, Activity, Edit, Save, X,
-  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield,
+  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield, Camera,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -101,6 +102,7 @@ export default function MemberDetail() {
   const [invoices, setInvoices] = useState<any[]>([]);
 
   // Freeze
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [freezeDays, setFreezeDays] = useState("7");
   const [freezing, setFreezing] = useState(false);
 
@@ -643,6 +645,50 @@ export default function MemberDetail() {
               ))}
             </div>
           )}
+
+          {/* Progress Photos Timeline */}
+          {measurements.some((m: any) => m.beforePhoto || m.afterPhoto) && (
+            <div className="mt-6">
+              <h3 className="font-semibold flex items-center gap-2 mb-3"><Camera className="h-4 w-4" /> Progress Photos</h3>
+              <div className="space-y-4">
+                {measurements.filter((m: any) => m.beforePhoto || m.afterPhoto).map((m: any, i: number) => (
+                  <Card key={m.id}>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">{m.date}</span>
+                        {i === 0 && <Badge variant="secondary" className="text-xs">Latest</Badge>}
+                        <span className="text-muted-foreground">— {m.weight} kg · BMI {m.bmi}</span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">Before</p>
+                          {m.beforePhoto ? (
+                            <img src={m.beforePhoto} alt="Before" className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightboxSrc(m.beforePhoto)} />
+                          ) : (
+                            <div className="w-full h-40 rounded-lg border border-dashed flex items-center justify-center text-muted-foreground/40">
+                              <Camera className="h-8 w-8" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">After</p>
+                          {m.afterPhoto ? (
+                            <img src={m.afterPhoto} alt="After" className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightboxSrc(m.afterPhoto)} />
+                          ) : (
+                            <div className="w-full h-40 rounded-lg border border-dashed flex items-center justify-center text-muted-foreground/40">
+                              <Camera className="h-8 w-8" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         {/* ── ATTENDANCE TAB ──────────────────────────────────── */}
@@ -779,6 +825,14 @@ export default function MemberDetail() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Lightbox */}
+      <Dialog open={lightboxSrc !== null} onOpenChange={(o) => !o && setLightboxSrc(null)}>
+        <DialogContent className="max-w-3xl p-2 bg-black/90 border-none">
+          <DialogHeader className="sr-only"><DialogTitle>Photo Preview</DialogTitle></DialogHeader>
+          {lightboxSrc && <img src={lightboxSrc} alt="Full size" className="w-full max-h-[80vh] object-contain rounded" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, Search, Eye, Upload, X, Pencil } from "lucide-react";
+import { Plus, Trash2, Search, Eye, Upload, X, Pencil, Camera } from "lucide-react";
 import { format } from "date-fns";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -48,6 +48,20 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+async function uploadPhoto(dataUrl: string, filename: string): Promise<string> {
+  try {
+    const res = await fetch("/api/upload-photo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataUrl, filename }),
+    });
+    const json = await res.json();
+    return json.url ?? dataUrl; // fallback to base64 if no Blob token
+  } catch {
+    return dataUrl;
+  }
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -154,10 +168,14 @@ export default function Measurements() {
       });
       const measurementId = (created as any)?.id;
       if ((formBeforePhoto || formAfterPhoto) && measurementId) {
+        const [before, after] = await Promise.all([
+          formBeforePhoto ? uploadPhoto(formBeforePhoto, `before-${measurementId}.jpg`) : Promise.resolve(null),
+          formAfterPhoto ? uploadPhoto(formAfterPhoto, `after-${measurementId}.jpg`) : Promise.resolve(null),
+        ]);
         const photoRes = await fetch(`/api/measurements/${measurementId}/photos`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ beforePhoto: formBeforePhoto, afterPhoto: formAfterPhoto }),
+          body: JSON.stringify({ beforePhoto: before, afterPhoto: after }),
         });
         if (!photoRes.ok) {
           const err = await photoRes.text().catch(() => "");
@@ -282,10 +300,14 @@ export default function Measurements() {
     if (!photoRecord) return;
     setSavingPhotos(true);
     try {
+      const [before, after] = await Promise.all([
+        displayBefore?.startsWith("data:") ? uploadPhoto(displayBefore, `before-${photoRecord.id}.jpg`) : Promise.resolve(displayBefore),
+        displayAfter?.startsWith("data:") ? uploadPhoto(displayAfter, `after-${photoRecord.id}.jpg`) : Promise.resolve(displayAfter),
+      ]);
       const res = await fetch(`/api/measurements/${photoRecord.id}/photos`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ beforePhoto: displayBefore, afterPhoto: displayAfter }),
+        body: JSON.stringify({ beforePhoto: before, afterPhoto: after }),
       });
       if (!res.ok) throw new Error(await res.text().catch(() => String(res.status)));
       toast({ title: "Photos saved" });
@@ -334,6 +356,7 @@ export default function Measurements() {
                   <TableHead>Body Fat %</TableHead>
                   <TableHead>Chest (cm)</TableHead>
                   <TableHead>Waist (cm)</TableHead>
+                  <TableHead>Photos</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -370,6 +393,16 @@ export default function Measurements() {
                         </TableCell>
                         <TableCell>{m.chest ?? "—"}</TableCell>
                         <TableCell>{m.waist ?? "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {(m as any).beforePhoto ? (
+                              <img src={(m as any).beforePhoto} alt="B" className="h-8 w-8 rounded object-cover border cursor-pointer" onClick={() => setLightboxSrc((m as any).beforePhoto)} />
+                            ) : <span className="h-8 w-8 rounded border border-dashed flex items-center justify-center"><Camera className="h-3 w-3 text-muted-foreground/40" /></span>}
+                            {(m as any).afterPhoto ? (
+                              <img src={(m as any).afterPhoto} alt="A" className="h-8 w-8 rounded object-cover border cursor-pointer" onClick={() => setLightboxSrc((m as any).afterPhoto)} />
+                            ) : <span className="h-8 w-8 rounded border border-dashed flex items-center justify-center"><Camera className="h-3 w-3 text-muted-foreground/40" /></span>}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => openPhotoDialog(m)}>
                             <Eye className="h-4 w-4 text-muted-foreground" />
