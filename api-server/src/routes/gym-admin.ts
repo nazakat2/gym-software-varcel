@@ -796,7 +796,7 @@ router.post("/members", async (req, res) => {
   const {
     name, phone, whatsapp, email, gender, dob, cnic, city, area, address, bloodGroup,
     emergencyContactName, emergencyContactPhone, fitnessGoal, referralSource,
-    photoUrl, plan, planStartDate, assignedTrainerId,
+    photoUrl, plan, planStartDate, assignedTrainerId, commissionPercent,
   } = req.body;
   const planExpiryDate = calcExpiry(planStartDate, plan);
   const [member] = await db.insert(membersTable).values({
@@ -826,6 +826,25 @@ router.post("/members", async (req, res) => {
     memberId: member.id, plan, startDate: planStartDate, expiryDate: planExpiryDate,
     amount: String(planPrices[plan] || 3000), status: "active",
   });
+
+  // Create trainer commission subscription if commission % provided
+  if (assignedTrainerId && commissionPercent && parseFloat(commissionPercent) > 0) {
+    const planNames: Record<string, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" };
+    const [commPlan] = await db.insert(plansTable).values({
+      name: `${planNames[plan] || plan} - ${commissionPercent}% Commission`,
+      totalFee: String(planPrices[plan] || 3000),
+      commissionType: "percentage",
+      commissionValue: String(commissionPercent),
+      isActive: false,
+    }).returning();
+    await db.insert(clientSubscriptionsTable).values({
+      memberId: member.id,
+      trainerId: parseInt(assignedTrainerId),
+      planId: commPlan.id,
+      startDate: planStartDate,
+      status: "active",
+    });
+  }
 
   // Create notification
   await db.insert(adminNotificationsTable).values({

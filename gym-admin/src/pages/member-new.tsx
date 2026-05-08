@@ -68,6 +68,7 @@ export default function AddMember() {
   const [planStartDate, setPlanStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [fitnessGoal, setFitnessGoal] = useState("general");
   const [trainerId, setTrainerId] = useState("none");
+  const [trainerCommission, setTrainerCommission] = useState("");
   const [referralSource, setReferralSource] = useState("");
 
   // Health
@@ -108,6 +109,7 @@ export default function AddMember() {
         plan, planStartDate,
         fitnessGoal, referralSource: referralSource || null,
         assignedTrainerId: (trainerId && trainerId !== "none") ? parseInt(trainerId) : null,
+        commissionPercent: (trainerId && trainerId !== "none" && trainerCommission) ? parseFloat(trainerCommission) : null,
         photoUrl: photoPreview || null,
       });
 
@@ -321,7 +323,7 @@ export default function AddMember() {
               </div>
               <div className="space-y-1">
                 <Label>Assign Trainer</Label>
-                <Select value={trainerId} onValueChange={setTrainerId}>
+                <Select value={trainerId} onValueChange={v => { setTrainerId(v); setTrainerCommission(""); }}>
                   <SelectTrigger><SelectValue placeholder="No trainer assigned" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No trainer assigned</SelectItem>
@@ -329,6 +331,19 @@ export default function AddMember() {
                   </SelectContent>
                 </Select>
               </div>
+              {trainerId && trainerId !== "none" && (
+                <div className="space-y-1">
+                  <Label>Commission %</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 30"
+                    value={trainerCommission}
+                    onChange={e => setTrainerCommission(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="space-y-1">
                 <Label>Referral Source</Label>
                 <Select value={referralSource} onValueChange={setReferralSource}>
@@ -339,6 +354,28 @@ export default function AddMember() {
                 </Select>
               </div>
             </div>
+            {trainerId && trainerId !== "none" && trainerCommission && Number(trainerCommission) > 0 && (() => {
+              const PLAN_PRICES: Record<string, number> = { daily: 200, weekly: 800, monthly: 3000, quarterly: 8000, yearly: 28000 };
+              const fee = PLAN_PRICES[plan] ?? 0;
+              const commission = Math.round(fee * Number(trainerCommission) / 100);
+              const gymRevenue = fee - commission;
+              return (
+                <div className="mt-4 rounded-lg border bg-muted/40 p-4 grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground mb-1">Membership Fee</div>
+                    <div className="font-semibold">PKR {fee.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-1">Trainer Commission ({trainerCommission}%)</div>
+                    <div className="font-semibold text-amber-500">PKR {commission.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-1">Gym Revenue</div>
+                    <div className="font-semibold text-green-500">PKR {gymRevenue.toLocaleString()}</div>
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
