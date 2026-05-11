@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,22 @@ export default function AddMember() {
   const { toast } = useToast();
   const { data: employees } = useListEmployees();
   const trainers = (employees || []).filter(e => e.role === "trainer");
+
+  const [planPrices, setPlanPrices] = useState<Record<string, number>>({
+    daily: 200, weekly: 800, monthly: 3000, quarterly: 8000, yearly: 28000,
+  });
+
+  useEffect(() => {
+    fetch("/api/business").then(r => r.json()).then(s => {
+      setPlanPrices({
+        daily: parseFloat(s.dailyFee || "200"),
+        weekly: parseFloat(s.weeklyFee || "800"),
+        monthly: parseFloat(s.monthlyFee || "3000"),
+        quarterly: parseFloat(s.quarterlyFee || "8000"),
+        yearly: parseFloat(s.yearlyFee || "28000"),
+      });
+    }).catch(() => {});
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -295,11 +311,11 @@ export default function AddMember() {
                 <Select value={plan} onValueChange={setPlan}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="daily">Daily (Rs 200)</SelectItem>
-                    <SelectItem value="weekly">Weekly (Rs 800)</SelectItem>
-                    <SelectItem value="monthly">Monthly (Rs 3,000)</SelectItem>
-                    <SelectItem value="quarterly">Quarterly (Rs 8,000)</SelectItem>
-                    <SelectItem value="yearly">Yearly (Rs 28,000)</SelectItem>
+                    <SelectItem value="daily">Daily (Rs {planPrices.daily.toLocaleString()})</SelectItem>
+                    <SelectItem value="weekly">Weekly (Rs {planPrices.weekly.toLocaleString()})</SelectItem>
+                    <SelectItem value="monthly">Monthly (Rs {planPrices.monthly.toLocaleString()})</SelectItem>
+                    <SelectItem value="quarterly">Quarterly (Rs {planPrices.quarterly.toLocaleString()})</SelectItem>
+                    <SelectItem value="yearly">Yearly (Rs {planPrices.yearly.toLocaleString()})</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -355,8 +371,7 @@ export default function AddMember() {
               </div>
             </div>
             {trainerId && trainerId !== "none" && trainerCommission && Number(trainerCommission) > 0 && (() => {
-              const PLAN_PRICES: Record<string, number> = { daily: 200, weekly: 800, monthly: 3000, quarterly: 8000, yearly: 28000 };
-              const fee = PLAN_PRICES[plan] ?? 0;
+              const fee = planPrices[plan] ?? 0;
               const commission = Math.round(fee * Number(trainerCommission) / 100);
               const gymRevenue = fee - commission;
               return (

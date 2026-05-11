@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useListMembers, useDeleteMember, useUpdateMember, useListEmployees, useListPlans } from "@workspace/api-client-react";
+import { useListMembers, useDeleteMember, useUpdateMember, useListEmployees } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -31,12 +31,11 @@ export default function Members() {
     gender: "male", dob: "", address: "",
     plan: "monthly", planStartDate: "", status: "active",
     assignedTrainerId: "" as string,
-    trainerPlanId: "" as string,
+    trainerCommission: "" as string,
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const { data: members, isLoading, refetch } = useListMembers();
   const { data: employees } = useListEmployees();
-  const { data: trainerPlans } = useListPlans();
   const deleteMember = useDeleteMember();
   const updateMember = useUpdateMember();
 
@@ -75,7 +74,7 @@ export default function Members() {
       planStartDate: m.planStartDate ?? new Date().toISOString().split("T")[0],
       status: m.status ?? "active",
       assignedTrainerId: (m as any).assignedTrainerId ? String((m as any).assignedTrainerId) : "",
-      trainerPlanId: "",
+      trainerCommission: "",
     });
   };
 
@@ -87,7 +86,7 @@ export default function Members() {
     }
     setSavingEdit(true);
     try {
-      const { trainerPlanId: _unused, ...memberData } = editForm;
+      const { trainerCommission: _unused, ...memberData } = editForm;
       await updateMember.mutateAsync({
         id: editMember.id,
         data: {
@@ -292,7 +291,7 @@ export default function Members() {
               </div>
               <div className="grid gap-2 col-span-2">
                 <Label>Trainer</Label>
-                <Select value={editForm.assignedTrainerId || "none"} onValueChange={(v) => setEditForm(f => ({ ...f, assignedTrainerId: v === "none" ? "" : v, trainerPlanId: "" }))}>
+                <Select value={editForm.assignedTrainerId || "none"} onValueChange={(v) => setEditForm(f => ({ ...f, assignedTrainerId: v === "none" ? "" : v, trainerCommission: "" }))}>
                   <SelectTrigger><SelectValue placeholder="No trainer assigned" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No trainer assigned</SelectItem>
@@ -303,37 +302,17 @@ export default function Members() {
                 </Select>
               </div>
               {editForm.assignedTrainerId && editForm.assignedTrainerId !== "none" && (
-                <>
-                  <div className="grid gap-2 col-span-2">
-                    <Label>Trainer Plan (Commission)</Label>
-                    <Select value={editForm.trainerPlanId || "none"} onValueChange={(v) => setEditForm(f => ({ ...f, trainerPlanId: v === "none" ? "" : v }))}>
-                      <SelectTrigger><SelectValue placeholder="Select commission plan..." /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No plan (manual commission)</SelectItem>
-                        {(trainerPlans || []).filter(p => p.isActive).map(p => (
-                          <SelectItem key={p.id} value={String(p.id)}>
-                            {p.name} — {p.commissionType === "percentage" ? `${p.commissionValue}%` : `PKR ${p.commissionValue}`} of PKR {p.totalFee.toLocaleString()}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {editForm.trainerPlanId && editForm.trainerPlanId !== "none" && (() => {
-                    const plan = (trainerPlans || []).find(p => String(p.id) === editForm.trainerPlanId);
-                    if (!plan) return null;
-                    const commission = plan.commissionType === "percentage"
-                      ? Math.round(plan.totalFee * plan.commissionValue / 100)
-                      : plan.commissionValue;
-                    const gymRevenue = plan.totalFee - commission;
-                    return (
-                      <div className="col-span-2 rounded-lg border bg-muted/40 p-3 grid grid-cols-3 gap-3 text-center text-sm">
-                        <div><p className="text-xs text-muted-foreground">Total Fee</p><p className="font-bold">PKR {plan.totalFee.toLocaleString()}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Trainer Commission</p><p className="font-bold text-orange-500">PKR {commission.toLocaleString()} ({plan.commissionValue}{plan.commissionType === "percentage" ? "%" : " fixed"})</p></div>
-                        <div><p className="text-xs text-muted-foreground">Gym Revenue</p><p className="font-bold text-green-600">PKR {gymRevenue.toLocaleString()}</p></div>
-                      </div>
-                    );
-                  })()}
-                </>
+                <div className="grid gap-2">
+                  <Label>Commission %</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 30"
+                    value={editForm.trainerCommission}
+                    onChange={e => setEditForm(f => ({ ...f, trainerCommission: e.target.value }))}
+                  />
+                </div>
               )}
             </div>
           </div>

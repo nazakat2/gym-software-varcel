@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { useGetBusinessSettings, useUpdateBusinessSettings } from "@workspace/api-client-react";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,64 +10,75 @@ import { Settings, Save, Facebook, Instagram } from "lucide-react";
 
 export default function BusinessSettings() {
   const { toast } = useToast();
-  const { data: settings, isLoading } = useGetBusinessSettings();
-  const updateSettings = useUpdateBusinessSettings();
+  const [isLoading, setIsLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
     gymName: "", address: "", phone: "", email: "", website: "",
-    monthlyFee: "", quarterlyFee: "", yearlyFee: "", currency: "PKR",
+    dailyFee: "", weeklyFee: "", monthlyFee: "", quarterlyFee: "", yearlyFee: "", currency: "PKR",
     openTime: "", closeTime: "", taxRate: "",
     facebook: "", instagram: "", snapchat: "", tiktok: "",
   });
 
-  useEffect(() => {
-    if (settings) {
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/business");
+      if (!res.ok) throw new Error();
+      const s = await res.json();
       setForm({
-        gymName: (settings as any).gymName || "",
-        address: (settings as any).address || "",
-        phone: (settings as any).phone || "",
-        email: (settings as any).email || "",
-        website: (settings as any).website || "",
-        monthlyFee: String((settings as any).monthlyFee || ""),
-        quarterlyFee: String((settings as any).quarterlyFee || ""),
-        yearlyFee: String((settings as any).yearlyFee || ""),
-        currency: (settings as any).currency || "PKR",
-        openTime: (settings as any).openTime || "",
-        closeTime: (settings as any).closeTime || "",
-        taxRate: String((settings as any).taxRate || ""),
-        facebook: (settings as any).facebook || "",
-        instagram: (settings as any).instagram || "",
-        snapchat: (settings as any).snapchat || "",
-        tiktok: (settings as any).tiktok || "",
+        gymName: s.gymName || "",
+        address: s.address || "",
+        phone: s.phone || "",
+        email: s.email || "",
+        website: s.website || "",
+        dailyFee: String(s.dailyFee || "200"),
+        weeklyFee: String(s.weeklyFee || "800"),
+        monthlyFee: String(s.monthlyFee || "3000"),
+        quarterlyFee: String(s.quarterlyFee || "8000"),
+        yearlyFee: String(s.yearlyFee || "28000"),
+        currency: s.currency || "PKR",
+        openTime: s.openTime || "",
+        closeTime: s.closeTime || "",
+        taxRate: String(s.taxRate || ""),
+        facebook: s.facebook || "",
+        instagram: s.instagram || "",
+        snapchat: s.snapchat || "",
+        tiktok: s.tiktok || "",
       });
+    } catch {
+      toast({ title: "Failed to load settings", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
-  }, [settings]);
+  }, [toast]);
+
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   const handleSave = async () => {
+    setSaving(true);
     try {
-      await updateSettings.mutateAsync({
-        data: {
+      const res = await fetch("/api/business", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           gymName: form.gymName,
           address: form.address,
           phone: form.phone,
           email: form.email,
-          website: form.website || undefined,
+          currency: form.currency,
+          dailyFee: form.dailyFee ? parseFloat(form.dailyFee) : undefined,
+          weeklyFee: form.weeklyFee ? parseFloat(form.weeklyFee) : undefined,
           monthlyFee: form.monthlyFee ? parseFloat(form.monthlyFee) : undefined,
           quarterlyFee: form.quarterlyFee ? parseFloat(form.quarterlyFee) : undefined,
           yearlyFee: form.yearlyFee ? parseFloat(form.yearlyFee) : undefined,
-          currency: form.currency,
-          openTime: form.openTime || undefined,
-          closeTime: form.closeTime || undefined,
-          taxRate: form.taxRate ? parseFloat(form.taxRate) : undefined,
-          facebook: form.facebook || undefined,
-          instagram: form.instagram || undefined,
-          snapchat: form.snapchat || undefined,
-          tiktok: form.tiktok || undefined,
-        }
+        }),
       });
+      if (!res.ok) throw new Error();
       toast({ title: "Business settings saved" });
     } catch {
       toast({ title: "Failed to save settings", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -78,7 +88,7 @@ export default function BusinessSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Business Settings</h1>
-        <Button onClick={handleSave} disabled={updateSettings.isPending}>
+        <Button onClick={handleSave} disabled={saving}>
           <Save className="mr-2 h-4 w-4" /> Save Changes
         </Button>
       </div>
@@ -114,19 +124,27 @@ export default function BusinessSettings() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Membership Fees</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Membership Fees (PKR)</CardTitle></CardHeader>
         <CardContent className="grid gap-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <div className="grid gap-2">
-              <Label>Monthly (PKR)</Label>
+              <Label>Daily</Label>
+              <Input type="number" value={form.dailyFee} onChange={(e) => setForm(f => ({ ...f, dailyFee: e.target.value }))} placeholder="200" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Weekly</Label>
+              <Input type="number" value={form.weeklyFee} onChange={(e) => setForm(f => ({ ...f, weeklyFee: e.target.value }))} placeholder="800" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Monthly</Label>
               <Input type="number" value={form.monthlyFee} onChange={(e) => setForm(f => ({ ...f, monthlyFee: e.target.value }))} placeholder="3000" />
             </div>
             <div className="grid gap-2">
-              <Label>Quarterly (PKR)</Label>
+              <Label>Quarterly</Label>
               <Input type="number" value={form.quarterlyFee} onChange={(e) => setForm(f => ({ ...f, quarterlyFee: e.target.value }))} placeholder="8000" />
             </div>
             <div className="grid gap-2">
-              <Label>Yearly (PKR)</Label>
+              <Label>Yearly</Label>
               <Input type="number" value={form.yearlyFee} onChange={(e) => setForm(f => ({ ...f, yearlyFee: e.target.value }))} placeholder="28000" />
             </div>
           </div>

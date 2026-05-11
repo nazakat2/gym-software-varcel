@@ -2724,13 +2724,20 @@ router.get("/business", async (_req, res) => {
 });
 
 router.put("/business", async (req, res) => {
-  const { gymName, address, phone, email, logoUrl, currency, timezone } = req.body;
+  const { gymName, address, phone, email, logoUrl, currency, timezone, dailyFee, weeklyFee, monthlyFee, quarterlyFee, yearlyFee } = req.body;
   const [existing] = await db.select().from(businessSettingsTable).limit(1);
+  const feeFields = {
+    ...(dailyFee !== undefined && { dailyFee: String(dailyFee) }),
+    ...(weeklyFee !== undefined && { weeklyFee: String(weeklyFee) }),
+    ...(monthlyFee !== undefined && { monthlyFee: String(monthlyFee) }),
+    ...(quarterlyFee !== undefined && { quarterlyFee: String(quarterlyFee) }),
+    ...(yearlyFee !== undefined && { yearlyFee: String(yearlyFee) }),
+  };
   if (existing) {
-    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
+    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
     return res.json(updated);
   }
-  const [created] = await db.insert(businessSettingsTable).values({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone }).returning();
+  const [created] = await db.insert(businessSettingsTable).values({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields }).returning();
   res.json(created);
 });
 
