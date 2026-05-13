@@ -14,5 +14,7 @@ export interface Measurement {
   height: number;
   bmi: number;
   bodyFat?: number | null;
+  beforePhoto?: string | null;
+  afterPhoto?: string | null;
   date: string;
 }

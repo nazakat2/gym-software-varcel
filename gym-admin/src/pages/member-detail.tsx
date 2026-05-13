@@ -8,18 +8,176 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ArrowLeft, Phone, Mail, MapPin, CreditCard, User, HeartPulse, Dumbbell, MessageSquare,
   Calendar, FileText, Snowflake, RotateCcw, Plus, Trash2, Activity, Edit, Save, X,
-  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield,
+  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield, Camera, Pencil, Printer, Barcode,
 } from "lucide-react";
 import { format } from "date-fns";
 
 const API = (path: string) => `/api${path}`;
 const h = { "Content-Type": "application/json" };
+
+function buildInvoiceHtml(inv: { id: number; memberName: string; plan: string; amount: number; dueDate?: string; paidDate?: string; isPaid: boolean; phone?: string }) {
+  const statusColor = inv.isPaid ? "#16a34a" : "#dc2626";
+  const statusBg = inv.isPaid ? "#dcfce7" : "#fee2e2";
+  const statusText = inv.isPaid ? "PAID" : "UNPAID";
+  const statusNote = inv.isPaid
+    ? "Payment received on " + (inv.paidDate || "—")
+    : "Payment due by " + (inv.dueDate || "—");
+  const now = new Date().toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
+  const paidRow = inv.isPaid
+    ? "<tr><td class=\"lbl\">Paid On</td><td class=\"val\">" + (inv.paidDate || "—") + "</td></tr>"
+    : "";
+  const phoneRow = inv.phone
+    ? "<p class=\"member-phone\">" + inv.phone + "</p>"
+    : "";
+  const amountFmt = inv.amount.toLocaleString("en-PK");
+
+  const css = [
+    "*{margin:0;padding:0;box-sizing:border-box}",
+    "body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:24px 16px}",
+    ".toolbar{max-width:700px;margin:0 auto 16px;display:flex;gap:10px}",
+    ".print-btn{background:#0f172a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.4px}",
+    ".print-btn:hover{background:#1e293b}",
+    ".page{background:#fff;max-width:700px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12)}",
+    ".hdr{background:#0f172a;padding:28px 36px;display:table;width:100%;table-layout:fixed}",
+    ".hdr-left{display:table-cell;vertical-align:middle}",
+    ".hdr-right{display:table-cell;vertical-align:middle;text-align:right}",
+    ".gym-name{font-size:20px;font-weight:800;color:#fff;letter-spacing:1px;text-transform:uppercase}",
+    ".gym-sub{font-size:10px;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;margin-top:3px}",
+    ".inv-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:2px}",
+    ".inv-num{font-size:26px;font-weight:800;color:#f97316;margin-top:2px}",
+    ".inv-date{font-size:10px;color:#94a3b8;margin-top:3px}",
+    ".ribbon{background:#1e293b;padding:9px 36px;display:table;width:100%;table-layout:fixed}",
+    ".ribbon-left{display:table-cell;vertical-align:middle}",
+    ".ribbon-right{display:table-cell;vertical-align:middle;text-align:right}",
+    ".status-pill{display:inline-block;padding:3px 12px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:1.5px;background:" + statusBg + ";color:" + statusColor + "}",
+    ".ribbon-note{font-size:10px;color:#94a3b8}",
+    ".bd{padding:32px 36px}",
+    ".sec-lbl{font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}",
+    ".member-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;margin-bottom:24px}",
+    ".member-name{font-size:17px;font-weight:700;color:#0f172a}",
+    ".member-phone{font-size:12px;color:#64748b;margin-top:2px}",
+    "table.det{width:100%;border-collapse:collapse;margin-bottom:24px}",
+    "table.det th{text-align:left;font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;padding:6px 0;border-bottom:2px solid #e2e8f0}",
+    "table.det td{padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:13px}",
+    "td.lbl{color:#64748b;width:45%}",
+    "td.val{font-weight:600;color:#0f172a;text-align:right}",
+    "tr.amt td{padding-top:18px;border-bottom:none}",
+    "tr.amt td.lbl{font-size:12px;font-weight:700;color:#0f172a}",
+    "tr.amt td.val{font-size:20px;font-weight:800}",
+    ".cap{text-transform:capitalize}",
+    ".ft{background:#f8fafc;border-top:1px solid #e2e8f0;padding:18px 36px;display:table;width:100%;table-layout:fixed}",
+    ".ft-left{display:table-cell;vertical-align:middle;font-size:11px;color:#94a3b8}",
+    ".ft-right{display:table-cell;vertical-align:middle;text-align:right;font-size:10px;font-weight:700;color:#0f172a;letter-spacing:1px;text-transform:uppercase}",
+    "@media print{body{background:#fff;padding:0}.toolbar{display:none}.page{box-shadow:none;border-radius:0;max-width:100%}}",
+  ].join("");
+
+  return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>"
+    + "<title>Invoice #" + inv.id + " — " + inv.memberName + "</title>"
+    + "<style>" + css + "</style></head><body>"
+    + "<div class=\"toolbar\">"
+    + "<button class=\"print-btn\" onclick=\"window.print()\">&#128438; Print Invoice</button>"
+    + "</div>"
+    + "<div class=\"page\">"
+    + "<div class=\"hdr\">"
+    + "<div class=\"hdr-left\"><div class=\"gym-name\">Core X Gym</div><div class=\"gym-sub\">Fitness &amp; Wellness</div></div>"
+    + "<div class=\"hdr-right\"><div class=\"inv-label\">Invoice</div><div class=\"inv-num\">#" + inv.id + "</div><div class=\"inv-date\">Printed: " + now + "</div></div>"
+    + "</div>"
+    + "<div class=\"ribbon\">"
+    + "<div class=\"ribbon-left\"><span class=\"status-pill\">" + statusText + "</span></div>"
+    + "<div class=\"ribbon-right\"><span class=\"ribbon-note\">" + statusNote + "</span></div>"
+    + "</div>"
+    + "<div class=\"bd\">"
+    + "<div class=\"sec-lbl\">Bill To</div>"
+    + "<div class=\"member-box\"><div class=\"member-name\">" + inv.memberName + "</div>" + phoneRow + "</div>"
+    + "<div class=\"sec-lbl\">Invoice Details</div>"
+    + "<table class=\"det\"><thead><tr><th>Description</th><th style=\"text-align:right\">Details</th></tr></thead>"
+    + "<tbody>"
+    + "<tr><td class=\"lbl\">Membership Plan</td><td class=\"val cap\">" + inv.plan + " Plan</td></tr>"
+    + "<tr><td class=\"lbl\">Due Date</td><td class=\"val\">" + (inv.dueDate || "—") + "</td></tr>"
+    + paidRow
+    + "<tr><td class=\"lbl\">Status</td><td class=\"val\" style=\"color:" + statusColor + "\">" + statusText + "</td></tr>"
+    + "<tr class=\"amt\"><td class=\"lbl\">Total Amount</td><td class=\"val\">PKR " + amountFmt + "</td></tr>"
+    + "</tbody></table>"
+    + "</div>"
+    + "<div class=\"ft\"><div class=\"ft-left\">Thank you for choosing Core X Gym!</div><div class=\"ft-right\">Core X</div></div>"
+    + "</div>"
+    + "</body></html>";
+}
+
+function buildMemberCardHtml(member: {
+  id: number; name: string; phone: string; cnic: string;
+  plan: string; planExpiryDate: string; photoUrl?: string;
+  bloodGroup?: string;
+}) {
+  const photoSection = member.photoUrl
+    ? `<img src="${member.photoUrl}" alt="Photo" class="photo" />`
+    : `<div class="photo-placeholder">${member.name.charAt(0)}</div>`;
+
+  const bloodRow = member.bloodGroup
+    ? `<div class="info-item"><label>Blood Group</label><span>${member.bloodGroup}</span></div>`
+    : "";
+
+  const css = [
+    "*{margin:0;padding:0;box-sizing:border-box}",
+    "body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px}",
+    ".toolbar{margin-bottom:16px}",
+    ".print-btn{background:#0f172a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.4px}",
+    ".print-btn:hover{background:#1e293b}",
+    ".card{background:#fff;width:320px;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.15)}",
+    ".card-header{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:16px;text-align:center}",
+    ".gym-name{color:#fff;font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase}",
+    ".gym-sub{color:#94a3b8;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}",
+    ".card-body{padding:20px 16px 16px}",
+    ".photo-row{display:flex;align-items:center;gap:14px;margin-bottom:14px}",
+    ".photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #e2e8f0;flex-shrink:0}",
+    ".photo-placeholder{width:72px;height:72px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#64748b;border:3px solid #e2e8f0;flex-shrink:0}",
+    ".member-name{font-size:17px;font-weight:700;color:#0f172a}",
+    ".member-plan{font-size:11px;color:#f97316;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:2px}",
+    ".info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}",
+    ".info-item label{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;display:block}",
+    ".info-item span{font-size:11px;font-weight:600;color:#0f172a}",
+    ".barcode-section{border-top:1px solid #f1f5f9;padding-top:12px;text-align:center}",
+    ".barcode-label{font-size:8px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}",
+    ".member-id-text{font-size:10px;color:#64748b;margin-top:4px;letter-spacing:2px;font-family:monospace}",
+    ".card-footer{background:#f8fafc;border-top:1px solid #e2e8f0;padding:8px 16px;text-align:center;font-size:9px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase}",
+    "@media print{body{background:#fff;padding:0}.toolbar{display:none}.card{box-shadow:none}}",
+  ].join("");
+
+  const memberId = String(member.id).padStart(6, "0");
+
+  return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>"
+    + "<title>ID Card — " + member.name + "</title>"
+    + "<style>" + css + "</style>"
+    + "<script src=\"https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js\"></script>"
+    + "</head><body>"
+    + "<div class=\"toolbar\"><button class=\"print-btn\" onclick=\"window.print()\">&#128438; Print ID Card</button></div>"
+    + "<div class=\"card\">"
+    + "<div class=\"card-header\"><div class=\"gym-name\">Core X Gym</div><div class=\"gym-sub\">Member ID Card</div></div>"
+    + "<div class=\"card-body\">"
+    + "<div class=\"photo-row\">" + photoSection + "<div><div class=\"member-name\">" + member.name + "</div><div class=\"member-plan\">" + member.plan + " Plan</div></div></div>"
+    + "<div class=\"info-grid\">"
+    + "<div class=\"info-item\"><label>Member ID</label><span>#" + memberId + "</span></div>"
+    + "<div class=\"info-item\"><label>Phone</label><span>" + member.phone + "</span></div>"
+    + "<div class=\"info-item\"><label>CNIC</label><span>" + member.cnic + "</span></div>"
+    + bloodRow
+    + "<div class=\"info-item\"><label>Expiry</label><span>" + member.planExpiryDate + "</span></div>"
+    + "</div>"
+    + "<div class=\"barcode-section\"><div class=\"barcode-label\">Scan for Attendance</div>"
+    + "<svg id=\"barcode\"></svg>"
+    + "<div class=\"member-id-text\">MEM-" + memberId + "</div></div>"
+    + "</div>"
+    + "<div class=\"card-footer\">Core X Gym &mdash; Fitness &amp; Wellness</div>"
+    + "</div>"
+    + "<script>JsBarcode(\"#barcode\",\"MEM" + memberId + "\",{format:\"CODE128\",width:1.8,height:55,displayValue:false,margin:4,background:\"transparent\"});</script>"
+    + "</body></html>";
+}
 
 const CONDITIONS = [
   "High Blood Pressure (BP)", "Diabetes", "PCOS", "Thyroid", "Asthma",
@@ -100,7 +258,13 @@ export default function MemberDetail() {
   // Invoices tab
   const [invoices, setInvoices] = useState<any[]>([]);
 
+  // Edit measurement
+  const [editMeas, setEditMeas] = useState<any | null>(null);
+  const [editMeasForm, setEditMeasForm] = useState({ weight: "", height: "", chest: "", waist: "", arms: "", hips: "", bodyFat: "", notes: "" });
+  const [savingMeas, setSavingMeas] = useState(false);
+
   // Freeze
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [freezeDays, setFreezeDays] = useState("7");
   const [freezing, setFreezing] = useState(false);
 
@@ -227,6 +391,48 @@ export default function MemberDetail() {
     toast({ title: "Measurement deleted" });
   };
 
+  const openEditMeasurement = (m: any) => {
+    setEditMeas(m);
+    setEditMeasForm({
+      weight: String(m.weight ?? ""),
+      height: String(m.height ?? ""),
+      chest: m.chest != null ? String(m.chest) : "",
+      waist: m.waist != null ? String(m.waist) : "",
+      arms: m.arms != null ? String(m.arms) : "",
+      hips: m.hips != null ? String(m.hips) : "",
+      bodyFat: m.bodyFat != null ? String(m.bodyFat) : "",
+      notes: m.notes ?? "",
+    });
+  };
+
+  const handleUpdateMeasurement = async () => {
+    if (!editMeas) return;
+    const wt = parseFloat(editMeasForm.weight);
+    const ht = parseFloat(editMeasForm.height);
+    if (!editMeasForm.weight || wt < 1 || wt > 500) { toast({ title: "Weight must be 1–500 kg", variant: "destructive" }); return; }
+    if (!editMeasForm.height || ht < 50 || ht > 300) { toast({ title: "Height must be 50–300 cm", variant: "destructive" }); return; }
+    setSavingMeas(true);
+    try {
+      const res = await fetch(API(`/measurements/${editMeas.id}`), {
+        method: "PUT", headers: h,
+        body: JSON.stringify({
+          weight: wt, height: ht,
+          bodyFat: editMeasForm.bodyFat ? parseFloat(editMeasForm.bodyFat) : null,
+          chest: editMeasForm.chest ? parseFloat(editMeasForm.chest) : null,
+          waist: editMeasForm.waist ? parseFloat(editMeasForm.waist) : null,
+          arms: editMeasForm.arms ? parseFloat(editMeasForm.arms) : null,
+          hips: editMeasForm.hips ? parseFloat(editMeasForm.hips) : null,
+          notes: editMeasForm.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Measurement updated" });
+      setEditMeas(null);
+      fetch(API(`/members/${id}/measurements`)).then(r => r.json()).then(setMeasurements);
+    } catch { toast({ title: "Failed to update", variant: "destructive" }); }
+    finally { setSavingMeas(false); }
+  };
+
   const freezeMembership = async () => {
     setFreezing(true);
     try {
@@ -254,11 +460,18 @@ export default function MemberDetail() {
         method: "PUT", headers: h,
         body: JSON.stringify({ plan: renewPlan, planStartDate: renewDate }),
       });
-      const price = PLAN_PRICES[renewPlan] || 3000;
-      await fetch(API("/billing"), {
-        method: "POST", headers: h,
-        body: JSON.stringify({ memberId: parseInt(id!), amount: String(price), plan: renewPlan, dueDate: renewDate }),
-      });
+      // Only create invoice if no unpaid invoice already exists for this member+plan+dueDate
+      const existingInvoices: any[] = await fetch(API(`/members/${id}/invoices`)).then(r => r.json());
+      const alreadyHasUnpaid = existingInvoices.some(
+        inv => inv.status === "unpaid" && inv.plan === renewPlan && inv.dueDate === renewDate
+      );
+      if (!alreadyHasUnpaid) {
+        const price = PLAN_PRICES[renewPlan] || 3000;
+        await fetch(API("/billing"), {
+          method: "POST", headers: h,
+          body: JSON.stringify({ memberId: parseInt(id!), amount: String(price), plan: renewPlan, dueDate: renewDate }),
+        });
+      }
       await refetchMember();
       fetch(API(`/members/${id}/membership-history`)).then(r => r.json()).then(setMembershipHistory);
       fetch(API(`/members/${id}/invoices`)).then(r => r.json()).then(setInvoices);
@@ -280,10 +493,44 @@ export default function MemberDetail() {
     toast({ title: bl ? "Member blacklisted" : "Member removed from blacklist" });
   };
 
+  const printMemberCard = () => {
+    const html = buildMemberCardHtml({
+      id: m.id,
+      name: m.name,
+      phone: m.phone,
+      cnic: m.cnic,
+      plan: m.plan,
+      planExpiryDate: m.planExpiryDate,
+      photoUrl: m.photoUrl,
+      bloodGroup: m.bloodGroup,
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) win.focus();
+  };
+
   const markInvoicePaid = async (invId: number) => {
     await fetch(API(`/billing/${invId}/pay`), { method: "POST", headers: h, body: JSON.stringify({ paymentMethod: "cash" }) });
     fetch(API(`/members/${id}/invoices`)).then(r => r.json()).then(setInvoices);
     toast({ title: "Invoice marked as paid" });
+  };
+
+  const printInvoice = (inv: any) => {
+    const html = buildInvoiceHtml({
+      id: inv.id,
+      memberName: m.name,
+      phone: m.phone,
+      plan: inv.plan,
+      amount: parseInt(inv.amount),
+      dueDate: inv.dueDate,
+      paidDate: inv.paidDate,
+      isPaid: inv.status === "paid",
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) win.focus();
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-muted-foreground">Loading member profile...</div></div>;
@@ -310,7 +557,10 @@ export default function MemberDetail() {
               <Button onClick={saveProfile} disabled={saving}><Save className="h-4 w-4 mr-1" />{saving ? "Saving..." : "Save"}</Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => setEditMode(true)}><Edit className="h-4 w-4 mr-1" />Edit Profile</Button>
+            <>
+              <Button variant="outline" onClick={printMemberCard}><Barcode className="h-4 w-4 mr-1" />Print ID Card</Button>
+              <Button variant="outline" onClick={() => setEditMode(true)}><Edit className="h-4 w-4 mr-1" />Edit Profile</Button>
+            </>
           )}
         </div>
       </div>
@@ -624,10 +874,12 @@ export default function MemberDetail() {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <span className="font-semibold">{m.date}</span>
-                        {i === 0 && <Badge className="ml-2 text-xs" variant="secondary">Latest</Badge>}
                         {m.notes && <span className="text-muted-foreground text-xs ml-2">— {m.notes}</span>}
                       </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteMeasurement(m.id)}><Trash2 className="h-3.5 w-3.5"/></Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => openEditMeasurement(m)}><Pencil className="h-3.5 w-3.5"/></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteMeasurement(m.id)}><Trash2 className="h-3.5 w-3.5"/></Button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 md:grid-cols-5 gap-3 text-sm">
                       <StatBox label="Weight" value={`${m.weight} kg`} />
@@ -641,6 +893,49 @@ export default function MemberDetail() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* Progress Photos Timeline */}
+          {measurements.some((m: any) => m.beforePhoto || m.afterPhoto) && (
+            <div className="mt-6">
+              <h3 className="font-semibold flex items-center gap-2 mb-3"><Camera className="h-4 w-4" /> Progress Photos</h3>
+              <div className="space-y-4">
+                {measurements.filter((m: any) => m.beforePhoto || m.afterPhoto).map((m: any, i: number) => (
+                  <Card key={m.id}>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">{m.date}</span>
+                        <span className="text-muted-foreground">— {m.weight} kg · BMI {m.bmi}</span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">Before</p>
+                          {m.beforePhoto ? (
+                            <img src={m.beforePhoto} alt="Before" className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightboxSrc(m.beforePhoto)} />
+                          ) : (
+                            <div className="w-full h-40 rounded-lg border border-dashed flex items-center justify-center text-muted-foreground/40">
+                              <Camera className="h-8 w-8" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">After</p>
+                          {m.afterPhoto ? (
+                            <img src={m.afterPhoto} alt="After" className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightboxSrc(m.afterPhoto)} />
+                          ) : (
+                            <div className="w-full h-40 rounded-lg border border-dashed flex items-center justify-center text-muted-foreground/40">
+                              <Camera className="h-8 w-8" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
         </TabsContent>
@@ -712,12 +1007,13 @@ export default function MemberDetail() {
                         <span className="font-medium capitalize">{inv.plan} Plan</span>
                         <span className="text-muted-foreground ml-2">Due: {inv.dueDate}</span>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <span className="font-semibold">Rs {parseInt(inv.amount).toLocaleString()}</span>
                         <Badge variant={inv.status === "paid" ? "default" : "destructive"}>{inv.status}</Badge>
                         {inv.status === "unpaid" && (
                           <Button size="sm" variant="outline" onClick={() => markInvoicePaid(inv.id)}>Mark Paid</Button>
                         )}
+                        <Button size="sm" variant="ghost" onClick={() => printInvoice(inv)}><Printer className="h-4 w-4" /></Button>
                       </div>
                     </div>
                   ))}
@@ -779,6 +1075,35 @@ export default function MemberDetail() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Edit Measurement Dialog */}
+      <Dialog open={editMeas !== null} onOpenChange={(o) => !o && setEditMeas(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Measurement — {editMeas?.date}</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-4">
+            <div className="space-y-1"><Label className="text-xs">Weight (kg) *</Label><Input type="number" value={editMeasForm.weight} onChange={e=>setEditMeasForm(f=>({...f,weight:e.target.value}))} placeholder="70" /></div>
+            <div className="space-y-1"><Label className="text-xs">Height (cm) *</Label><Input type="number" value={editMeasForm.height} onChange={e=>setEditMeasForm(f=>({...f,height:e.target.value}))} placeholder="175" /></div>
+            <div className="space-y-1"><Label className="text-xs">Chest (cm)</Label><Input type="number" value={editMeasForm.chest} onChange={e=>setEditMeasForm(f=>({...f,chest:e.target.value}))} placeholder="90" /></div>
+            <div className="space-y-1"><Label className="text-xs">Waist (cm)</Label><Input type="number" value={editMeasForm.waist} onChange={e=>setEditMeasForm(f=>({...f,waist:e.target.value}))} placeholder="80" /></div>
+            <div className="space-y-1"><Label className="text-xs">Arms (cm)</Label><Input type="number" value={editMeasForm.arms} onChange={e=>setEditMeasForm(f=>({...f,arms:e.target.value}))} placeholder="35" /></div>
+            <div className="space-y-1"><Label className="text-xs">Hips (cm)</Label><Input type="number" value={editMeasForm.hips} onChange={e=>setEditMeasForm(f=>({...f,hips:e.target.value}))} placeholder="95" /></div>
+            <div className="space-y-1"><Label className="text-xs">Body Fat %</Label><Input type="number" value={editMeasForm.bodyFat} onChange={e=>setEditMeasForm(f=>({...f,bodyFat:e.target.value}))} placeholder="20" /></div>
+            <div className="space-y-1 col-span-2"><Label className="text-xs">Notes</Label><Input value={editMeasForm.notes} onChange={e=>setEditMeasForm(f=>({...f,notes:e.target.value}))} placeholder="Notes..." /></div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditMeas(null)}>Cancel</Button>
+            <Button onClick={handleUpdateMeasurement} disabled={savingMeas}>{savingMeas ? "Saving..." : "Save Changes"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox */}
+      <Dialog open={lightboxSrc !== null} onOpenChange={(o) => !o && setLightboxSrc(null)}>
+        <DialogContent className="max-w-3xl p-2 bg-black/90 border-none">
+          <DialogHeader className="sr-only"><DialogTitle>Photo Preview</DialogTitle></DialogHeader>
+          {lightboxSrc && <img src={lightboxSrc} alt="Full size" className="w-full max-h-[80vh] object-contain rounded" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

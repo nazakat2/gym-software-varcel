@@ -796,7 +796,7 @@ router.post("/members", async (req, res) => {
   const {
     name, phone, whatsapp, email, gender, dob, cnic, city, area, address, bloodGroup,
     emergencyContactName, emergencyContactPhone, fitnessGoal, referralSource,
-    photoUrl, plan, planStartDate, assignedTrainerId,
+    photoUrl, plan, planStartDate, assignedTrainerId, commissionPercent,
   } = req.body;
   const planExpiryDate = calcExpiry(planStartDate, plan);
   const [member] = await db.insert(membersTable).values({
@@ -826,6 +826,25 @@ router.post("/members", async (req, res) => {
     memberId: member.id, plan, startDate: planStartDate, expiryDate: planExpiryDate,
     amount: String(planPrices[plan] || 3000), status: "active",
   });
+
+  // Create trainer commission subscription if commission % provided
+  if (assignedTrainerId && commissionPercent && parseFloat(commissionPercent) > 0) {
+    const planNames: Record<string, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" };
+    const [commPlan] = await db.insert(plansTable).values({
+      name: `${planNames[plan] || plan} - ${commissionPercent}% Commission`,
+      totalFee: String(planPrices[plan] || 3000),
+      commissionType: "percentage",
+      commissionValue: String(commissionPercent),
+      isActive: false,
+    }).returning();
+    await db.insert(clientSubscriptionsTable).values({
+      memberId: member.id,
+      trainerId: parseInt(assignedTrainerId),
+      planId: commPlan.id,
+      startDate: planStartDate,
+      status: "active",
+    });
+  }
 
   // Create notification
   await db.insert(adminNotificationsTable).values({
@@ -1311,6 +1330,28 @@ router.post("/measurements", async (req, res) => {
   });
 });
 
+router.post("/upload-photo", asyncHandler(async (req, res) => {
+  const { dataUrl, filename = "photo.jpg" } = req.body as { dataUrl: string; filename?: string };
+  if (!dataUrl || !dataUrl.startsWith("data:")) {
+    res.status(400).json({ error: "Invalid dataUrl" });
+    return;
+  }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    res.json({ url: null });
+    return;
+  }
+  const { put } = await import("@vercel/blob");
+  const match = dataUrl.match(/^data:(.+);base64,(.+)$/);
+  if (!match) { res.status(400).json({ error: "Bad dataUrl format" }); return; }
+  const buffer = Buffer.from(match[2], "base64");
+  const blob = await put(`photos/${Date.now()}-${filename}`, buffer, {
+    access: "public",
+    contentType: match[1],
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+  res.json({ url: blob.url });
+}));
+
 router.patch("/measurements/:id/photos", asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id as string);
   const { beforePhoto, afterPhoto } = req.body as { beforePhoto?: string | null; afterPhoto?: string | null };
@@ -1384,7 +1425,7 @@ router.delete("/measurements/:id", async (req, res) => {
  *                         type: string
  */
 router.get("/attendance", async (req, res) => {
-  const { date, memberId } = req.query as { date?: string; memberId?: string };
+  const { date, memberId, month } = req.query as { date?: string; memberId?: string; month?: string };
   const rows = await db.select({
     attendance: attendanceTable,
     memberName: membersTable.name,
@@ -1394,6 +1435,7 @@ router.get("/attendance", async (req, res) => {
       and(
         date ? eq(attendanceTable.date, date) : undefined,
         memberId ? eq(attendanceTable.memberId, parseInt(memberId)) : undefined,
+        month ? and(gte(attendanceTable.date, month + "-01"), lte(attendanceTable.date, month + "-31")) : undefined,
       )
     )
     .orderBy(desc(attendanceTable.createdAt));
@@ -1446,6 +1488,54 @@ router.post("/attendance", async (req, res) => {
   const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
   res.status(201).json({ ...att, memberName: member?.name ?? "Unknown" });
 });
+
+/**
+ * @openapi
+ * /attendance/checkout:
+ *   post:
+ *     tags:
+ *       - Attendance
+ *     summary: Check out a member
+ *     description: Records check-out time for today's attendance record of a member
+ *     security:
+ *       - adminEmail: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - memberId
+ *             properties:
+ *               memberId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Check-out recorded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Attendance'
+ *       404:
+ *         description: No check-in record found for today
+ */
+router.post("/attendance/checkout", asyncHandler(async (req, res) => {
+  const { memberId } = req.body;
+  const date = today();
+  const checkOutTime = new Date().toTimeString().slice(0, 5);
+  const [att] = await db
+    .update(attendanceTable)
+    .set({ checkOutTime })
+    .where(and(eq(attendanceTable.memberId, memberId), eq(attendanceTable.date, date)))
+    .returning();
+  if (!att) {
+    res.status(404).json({ error: "No check-in found for today" });
+    return;
+  }
+  const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
+  res.json({ ...att, memberName: member?.name ?? "Unknown" });
+}));
 
 /**
  * @openapi
@@ -2635,13 +2725,20 @@ router.get("/business", async (_req, res) => {
 });
 
 router.put("/business", async (req, res) => {
-  const { gymName, address, phone, email, logoUrl, currency, timezone } = req.body;
+  const { gymName, address, phone, email, logoUrl, currency, timezone, dailyFee, weeklyFee, monthlyFee, quarterlyFee, yearlyFee } = req.body;
   const [existing] = await db.select().from(businessSettingsTable).limit(1);
+  const feeFields = {
+    ...(dailyFee !== undefined && { dailyFee: String(dailyFee) }),
+    ...(weeklyFee !== undefined && { weeklyFee: String(weeklyFee) }),
+    ...(monthlyFee !== undefined && { monthlyFee: String(monthlyFee) }),
+    ...(quarterlyFee !== undefined && { quarterlyFee: String(quarterlyFee) }),
+    ...(yearlyFee !== undefined && { yearlyFee: String(yearlyFee) }),
+  };
   if (existing) {
-    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
+    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
     return res.json(updated);
   }
-  const [created] = await db.insert(businessSettingsTable).values({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone }).returning();
+  const [created] = await db.insert(businessSettingsTable).values({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields }).returning();
   res.json(created);
 });
 
