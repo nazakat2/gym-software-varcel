@@ -1425,7 +1425,7 @@ router.delete("/measurements/:id", async (req, res) => {
  *                         type: string
  */
 router.get("/attendance", async (req, res) => {
-  const { date, memberId } = req.query as { date?: string; memberId?: string };
+  const { date, memberId, month } = req.query as { date?: string; memberId?: string; month?: string };
   const rows = await db.select({
     attendance: attendanceTable,
     memberName: membersTable.name,
@@ -1435,6 +1435,7 @@ router.get("/attendance", async (req, res) => {
       and(
         date ? eq(attendanceTable.date, date) : undefined,
         memberId ? eq(attendanceTable.memberId, parseInt(memberId)) : undefined,
+        month ? and(gte(attendanceTable.date, month + "-01"), lte(attendanceTable.date, month + "-31")) : undefined,
       )
     )
     .orderBy(desc(attendanceTable.createdAt));

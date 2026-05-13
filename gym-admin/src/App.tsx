@@ -11,6 +11,7 @@ import AddMember from "@/pages/member-new";
 import MemberDetail from "@/pages/member-detail";
 import Measurements from "@/pages/measurements";
 import Attendance from "@/pages/attendance";
+import AttendanceScan from "@/pages/attendance-scan";
 import Employees from "@/pages/employees";
 import Billing from "@/pages/billing";
 import Inventory from "@/pages/inventory";
@@ -65,6 +66,7 @@ function ProtectedRouter() {
         <Route path="/members/:id" component={MemberDetail} />
         <Route path="/measurements" component={Measurements} />
         <Route path="/attendance" component={Attendance} />
+        <Route path="/attendance-scan" component={AttendanceScan} />
         <Route path="/employees" component={Employees} />
         <Route path="/billing" component={Billing} />
         <Route path="/trainer-commission" component={TrainerCommission} />

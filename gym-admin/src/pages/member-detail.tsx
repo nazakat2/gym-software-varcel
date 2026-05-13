@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   ArrowLeft, Phone, Mail, MapPin, CreditCard, User, HeartPulse, Dumbbell, MessageSquare,
   Calendar, FileText, Snowflake, RotateCcw, Plus, Trash2, Activity, Edit, Save, X,
-  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield, Camera, Pencil, Printer,
+  CheckCircle2, AlertTriangle, Ban, RefreshCw, Shield, Camera, Pencil, Printer, Barcode,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -108,6 +108,74 @@ function buildInvoiceHtml(inv: { id: number; memberName: string; plan: string; a
     + "</div>"
     + "<div class=\"ft\"><div class=\"ft-left\">Thank you for choosing Core X Gym!</div><div class=\"ft-right\">Core X</div></div>"
     + "</div>"
+    + "</body></html>";
+}
+
+function buildMemberCardHtml(member: {
+  id: number; name: string; phone: string; cnic: string;
+  plan: string; planExpiryDate: string; photoUrl?: string;
+  bloodGroup?: string;
+}) {
+  const photoSection = member.photoUrl
+    ? `<img src="${member.photoUrl}" alt="Photo" class="photo" />`
+    : `<div class="photo-placeholder">${member.name.charAt(0)}</div>`;
+
+  const bloodRow = member.bloodGroup
+    ? `<div class="info-item"><label>Blood Group</label><span>${member.bloodGroup}</span></div>`
+    : "";
+
+  const css = [
+    "*{margin:0;padding:0;box-sizing:border-box}",
+    "body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px}",
+    ".toolbar{margin-bottom:16px}",
+    ".print-btn{background:#0f172a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.4px}",
+    ".print-btn:hover{background:#1e293b}",
+    ".card{background:#fff;width:320px;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.15)}",
+    ".card-header{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:16px;text-align:center}",
+    ".gym-name{color:#fff;font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase}",
+    ".gym-sub{color:#94a3b8;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}",
+    ".card-body{padding:20px 16px 16px}",
+    ".photo-row{display:flex;align-items:center;gap:14px;margin-bottom:14px}",
+    ".photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #e2e8f0;flex-shrink:0}",
+    ".photo-placeholder{width:72px;height:72px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#64748b;border:3px solid #e2e8f0;flex-shrink:0}",
+    ".member-name{font-size:17px;font-weight:700;color:#0f172a}",
+    ".member-plan{font-size:11px;color:#f97316;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:2px}",
+    ".info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}",
+    ".info-item label{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;display:block}",
+    ".info-item span{font-size:11px;font-weight:600;color:#0f172a}",
+    ".barcode-section{border-top:1px solid #f1f5f9;padding-top:12px;text-align:center}",
+    ".barcode-label{font-size:8px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}",
+    ".member-id-text{font-size:10px;color:#64748b;margin-top:4px;letter-spacing:2px;font-family:monospace}",
+    ".card-footer{background:#f8fafc;border-top:1px solid #e2e8f0;padding:8px 16px;text-align:center;font-size:9px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase}",
+    "@media print{body{background:#fff;padding:0}.toolbar{display:none}.card{box-shadow:none}}",
+  ].join("");
+
+  const memberId = String(member.id).padStart(6, "0");
+
+  return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>"
+    + "<title>ID Card — " + member.name + "</title>"
+    + "<style>" + css + "</style>"
+    + "<script src=\"https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js\"></script>"
+    + "</head><body>"
+    + "<div class=\"toolbar\"><button class=\"print-btn\" onclick=\"window.print()\">&#128438; Print ID Card</button></div>"
+    + "<div class=\"card\">"
+    + "<div class=\"card-header\"><div class=\"gym-name\">Core X Gym</div><div class=\"gym-sub\">Member ID Card</div></div>"
+    + "<div class=\"card-body\">"
+    + "<div class=\"photo-row\">" + photoSection + "<div><div class=\"member-name\">" + member.name + "</div><div class=\"member-plan\">" + member.plan + " Plan</div></div></div>"
+    + "<div class=\"info-grid\">"
+    + "<div class=\"info-item\"><label>Member ID</label><span>#" + memberId + "</span></div>"
+    + "<div class=\"info-item\"><label>Phone</label><span>" + member.phone + "</span></div>"
+    + "<div class=\"info-item\"><label>CNIC</label><span>" + member.cnic + "</span></div>"
+    + bloodRow
+    + "<div class=\"info-item\"><label>Expiry</label><span>" + member.planExpiryDate + "</span></div>"
+    + "</div>"
+    + "<div class=\"barcode-section\"><div class=\"barcode-label\">Scan for Attendance</div>"
+    + "<svg id=\"barcode\"></svg>"
+    + "<div class=\"member-id-text\">MEM-" + memberId + "</div></div>"
+    + "</div>"
+    + "<div class=\"card-footer\">Core X Gym &mdash; Fitness &amp; Wellness</div>"
+    + "</div>"
+    + "<script>JsBarcode(\"#barcode\",\"MEM" + memberId + "\",{format:\"CODE128\",width:1.8,height:55,displayValue:false,margin:4,background:\"transparent\"});</script>"
     + "</body></html>";
 }
 
@@ -425,6 +493,23 @@ export default function MemberDetail() {
     toast({ title: bl ? "Member blacklisted" : "Member removed from blacklist" });
   };
 
+  const printMemberCard = () => {
+    const html = buildMemberCardHtml({
+      id: m.id,
+      name: m.name,
+      phone: m.phone,
+      cnic: m.cnic,
+      plan: m.plan,
+      planExpiryDate: m.planExpiryDate,
+      photoUrl: m.photoUrl,
+      bloodGroup: m.bloodGroup,
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) win.focus();
+  };
+
   const markInvoicePaid = async (invId: number) => {
     await fetch(API(`/billing/${invId}/pay`), { method: "POST", headers: h, body: JSON.stringify({ paymentMethod: "cash" }) });
     fetch(API(`/members/${id}/invoices`)).then(r => r.json()).then(setInvoices);
@@ -472,7 +557,10 @@ export default function MemberDetail() {
               <Button onClick={saveProfile} disabled={saving}><Save className="h-4 w-4 mr-1" />{saving ? "Saving..." : "Save"}</Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => setEditMode(true)}><Edit className="h-4 w-4 mr-1" />Edit Profile</Button>
+            <>
+              <Button variant="outline" onClick={printMemberCard}><Barcode className="h-4 w-4 mr-1" />Print ID Card</Button>
+              <Button variant="outline" onClick={() => setEditMode(true)}><Edit className="h-4 w-4 mr-1" />Edit Profile</Button>
+            </>
           )}
         </div>
       </div>
