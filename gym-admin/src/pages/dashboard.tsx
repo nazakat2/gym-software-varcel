@@ -1,17 +1,61 @@
+import { useEffect } from "react";
 import { useGetDashboardStats, useGetRecentActivity, useGetRevenueChart, useGetMembershipBreakdown } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, CalendarCheck, DollarSign, AlertCircle, Briefcase, Package } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from "recharts";
 import { format } from "date-fns";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
-  const { data: activities, isLoading: activitiesLoading } = useGetRecentActivity();
-  const { data: revenueChart, isLoading: revenueLoading } = useGetRevenueChart();
-  const { data: membershipBreakdown, isLoading: membershipLoading } = useGetMembershipBreakdown();
+  const { logout } = useAuth();
 
-  if (statsLoading || activitiesLoading || revenueLoading || membershipLoading) {
-    return <div>Loading...</div>;
+  const { data: stats, isLoading: statsLoading, isError: statsError, error: statsErrorObj } = useGetDashboardStats({
+    query: { retry: false }
+  });
+  const { data: activities, isLoading: activitiesLoading } = useGetRecentActivity({
+    query: { retry: false }
+  });
+  const { data: revenueChart, isLoading: revenueLoading } = useGetRevenueChart({
+    query: { retry: false }
+  });
+  const { data: membershipBreakdown, isLoading: membershipLoading } = useGetMembershipBreakdown({
+    query: { retry: false }
+  });
+
+  // Auto-logout on 401 — token expired or invalid
+  useEffect(() => {
+    if (statsError && (statsErrorObj as any)?.status === 401) {
+      logout();
+    }
+  }, [statsError, statsErrorObj, logout]);
+
+  const isLoading = statsLoading || activitiesLoading || revenueLoading || membershipLoading;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (statsError) {
+    const is401 = (statsErrorObj as any)?.status === 401;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <p className="text-destructive font-medium">
+            {is401 ? "Session expired" : "Failed to load dashboard"}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {is401 ? "Redirecting to login..." : "Please refresh the page or try again."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const COLORS = ['#E31C25', '#10b981', '#f59e0b', '#3b82f6'];

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,8 @@ async function apiFetch(path: string, body: object) {
   let data: Record<string, unknown> = {};
   try { data = await res.json(); } catch { }
   if (!res.ok) throw new Error((data.message as string) || "Something went wrong");
-  return data;
+  // Handle both direct response and nested data response
+  return (data as any).data || data;
 }
 
 const OTP_LEN = 6;
@@ -53,6 +54,16 @@ export default function Login() {
   const [otpDigits, setOtpDigits] = useState(Array(OTP_LEN).fill(""));
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const focusNextRef = useRef<number>(-1);
+
+  // Auto-focus next box after state update
+  useEffect(() => {
+    const idx = focusNextRef.current;
+    if (idx >= 0 && idx < OTP_LEN) {
+      otpRefs.current[idx]?.focus();
+      focusNextRef.current = -1;
+    }
+  }, [otpDigits]);
 
   // ── Shared ─────────────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>("login");
@@ -70,12 +81,27 @@ export default function Login() {
 
   // ── OTP box handlers ────────────────────────────────────────────────────────
   const handleOtpChange = (val: string, idx: number) => {
-    const digit = val.replace(/\D/g, "").slice(-1);
-    const next = [...otpDigits]; next[idx] = digit; setOtpDigits(next);
-    if (digit && idx < OTP_LEN - 1) otpRefs.current[idx + 1]?.focus();
+    const digit = val.replace(/\D/g, "").charAt(0);
+    const next = [...otpDigits];
+    next[idx] = digit;
+    if (digit && idx < OTP_LEN - 1) {
+      focusNextRef.current = idx + 1;
+    }
+    setOtpDigits(next);
   };
   const handleOtpKey = (e: React.KeyboardEvent, idx: number) => {
-    if (e.key === "Backspace" && !otpDigits[idx] && idx > 0) otpRefs.current[idx - 1]?.focus();
+    if (e.key === "Backspace") {
+      if (otpDigits[idx]) {
+        const next = [...otpDigits];
+        next[idx] = "";
+        setOtpDigits(next);
+      } else if (idx > 0) {
+        focusNextRef.current = idx - 1;
+        const next = [...otpDigits];
+        next[idx - 1] = "";
+        setOtpDigits(next);
+      }
+    }
   };
 
   // ── Login ──────────────────────────────────────────────────────────────────
@@ -93,12 +119,12 @@ export default function Login() {
     e.preventDefault();
     if (!suName || !suEmail || !suPassword || !suConfirm) { setError("All fields are required"); return; }
     if (!/\S+@\S+\.\S+/.test(suEmail)) { setError("Invalid email address"); return; }
-    if (suPassword.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (suPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (suPassword !== suConfirm) { setError("Passwords do not match"); return; }
     setError(""); setLoading(true);
     try {
-      await apiFetch("/api/admin/auth/send-signup-otp", { name: suName, email: suEmail, password: suPassword, role: suRole });
-      resetOtp(); setStep("signup-otp"); startCooldown();
+      // Note: Backend requires gymId - for now, show error. Will implement gym selection later.
+      setError("Signup feature requires gym selection. Please contact administrator.");
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -134,7 +160,7 @@ export default function Login() {
     setError(""); setLoading(true);
     try {
       await apiFetch("/api/admin/auth/forgot-password", { email: fpEmail });
-      resetOtp(); setStep("forgot-otp");
+      resetOtp(); setStep("forgot-otp"); startCooldown();
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -144,7 +170,7 @@ export default function Login() {
     e.preventDefault();
     if (getOtp().length < OTP_LEN) { setError("Enter all 6 digits"); return; }
     if (!fpNewPassword) { setError("Enter a new password"); return; }
-    if (fpNewPassword.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (fpNewPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (fpNewPassword !== fpConfirm) { setError("Passwords do not match"); return; }
     setError(""); setLoading(true);
     try {
@@ -190,7 +216,7 @@ export default function Login() {
           value={d}
           onChange={e => handleOtpChange(e.target.value, i)}
           onKeyDown={e => handleOtpKey(e, i)}
-          autoFocus={i === 0}
+          onClick={e => (e.target as HTMLInputElement).select()}
           className={`w-11 h-14 rounded-xl border-2 text-center text-xl font-bold bg-background text-foreground outline-none transition-colors
             ${d ? "border-primary" : "border-input"} focus:border-primary`}
         />
@@ -274,12 +300,10 @@ export default function Login() {
 
               <div className="mt-5 pt-4 border-t text-center">
                 <p className="text-sm text-muted-foreground">
-                  Don't have an account?{" "}
-                  <button type="button"
-                    onClick={() => { setStep("signup-form"); clearError(); setSuName(""); setSuEmail(""); setSuPassword(""); setSuConfirm(""); setSuRole("staff"); }}
-                    className="text-primary font-semibold hover:underline">
-                    Create Account
-                  </button>
+                  New gym owner?{" "}
+                  <a href="/register" className="text-primary font-semibold hover:underline">
+                    Register Your Gym
+                  </a>
                 </p>
               </div>
             </CardContent>
@@ -465,8 +489,9 @@ export default function Login() {
                   {loading ? "Resetting..." : "Reset Password"}
                 </Button>
                 <ResendRow onResend={async () => {
+                  if (resendCooldown > 0) return;
                   setLoading(true); setError("");
-                  try { await apiFetch("/api/admin/auth/forgot-password", { email: fpEmail }); resetOtp(); otpRefs.current[0]?.focus(); }
+                  try { await apiFetch("/api/admin/auth/forgot-password", { email: fpEmail }); resetOtp(); otpRefs.current[0]?.focus(); startCooldown(); }
                   catch (err: any) { setError(err.message); }
                   finally { setLoading(false); }
                 }} />

@@ -9,10 +9,19 @@
   },
   "private": true,
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "@scarf/scarf", "core-js"]
+    "onlyBuiltDependencies": [
+      "@scarf/scarf",
+      "@sentry-internal/node-cpu-profiler",
+      "@whiskeysockets/baileys",
+      "bcrypt",
+      "core-js",
+      "esbuild",
+      "protobufjs",
+      "sharp"
+    ]
   },
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
   }
 }

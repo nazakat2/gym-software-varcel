@@ -17,6 +17,7 @@ import {
   ScanFace,
   BadgeDollarSign,
   ScanBarcode,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/attendance-scan", label: "Barcode Scanner", icon: ScanBarcode },
   { href: "/employees", label: "Employees", icon: Briefcase },
   { href: "/billing", label: "Billing", icon: Receipt },
+  { href: "/subscription", label: "Subscription", icon: CreditCard },
   { href: "/trainer-commission", label: "Trainer Commission", icon: BadgeDollarSign },
   { href: "/sales", label: "POS & Sales", icon: ShoppingCart },
   { href: "/inventory", label: "Inventory", icon: Package },

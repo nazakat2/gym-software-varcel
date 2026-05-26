@@ -120,8 +120,8 @@ curl -X POST http://localhost:3000/api/onboarding/register \
   -H "Content-Type: application/json" \
   -d '{
     "gymName": "Test Gym",
-    "phone": "+923001234567",
-    "ownerEmail": "test@example.com",
+    "phone": "+923482829569",
+    "ownerEmail": "mrsarimofficial@gmail.com",
     ...
   }'
 ```

@@ -1,9 +1,9 @@
 # Core X — Gym Management Platform
 
-A full-stack gym management platform consisting of two products:
+A full-stack saas gym management platform consisting of two products:
 
-1. **Core X Admin Panel** — Web-based management dashboard for gym owners/staff
-2. **Gym Member App** — React Native mobile app for gym members
+1. **Core X Admin Panel** — Web-based management dashboard for gym SaaS owners
+2. **Gym Member App** — React Native mobile app for gym SaaS members
 
 ---
 

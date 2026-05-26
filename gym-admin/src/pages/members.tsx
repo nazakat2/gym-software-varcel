@@ -34,8 +34,8 @@ export default function Members() {
     trainerCommission: "" as string,
   });
   const [savingEdit, setSavingEdit] = useState(false);
-  const { data: members, isLoading, refetch } = useListMembers();
-  const { data: employees } = useListEmployees();
+  const { data: members, isLoading, isError, refetch } = useListMembers({ query: { retry: false } });
+  const { data: employees } = useListEmployees({ query: { retry: false } });
   const deleteMember = useDeleteMember();
   const updateMember = useUpdateMember();
 

@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { ChatbotWidget } from "./chatbot";
+import { TrialBanner } from "./trial-banner";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -13,6 +14,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col sm:pl-64">
         <Header />
         <main className="flex flex-1 flex-col gap-4 p-4 pb-24 lg:gap-6 lg:p-6 lg:pb-24">
+          <TrialBanner />
           {children}
         </main>
       </div>

@@ -1,0 +1,60 @@
+{
+  "name": "gym-management-api",
+  "version": "1.0.0",
+  "description": "Production-ready multi-tenant gym management system",
+  "main": "api/index.ts",
+  "scripts": {
+    "dev": "tsx watch api/index.ts",
+    "build": "tsc",
+    "start": "node dist/api/index.js",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "db:generate": "cd lib/db && drizzle-kit generate",
+    "db:push": "cd lib/db && drizzle-kit push",
+    "db:studio": "cd lib/db && drizzle-kit studio",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.23.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.0",
+    "drizzle-zod": "^0.5.1",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.13",
+    "pg": "^8.12.0",
+    "rate-limit-redis": "^4.2.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.12.7",
+    "@types/nodemailer": "^6.4.14",
+    "@types/pg": "^8.11.5",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "@vitest/coverage-v8": "^1.5.0",
+    "drizzle-kit": "^0.26.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

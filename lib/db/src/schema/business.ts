@@ -1,9 +1,15 @@
-import { pgTable, text, serial, timestamp, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { gymsTable } from "./gyms";
 
 export const businessSettingsTable = pgTable("business_settings", {
   id: serial("id").primaryKey(),
+
+  // Multi-tenancy
+  gymId: uuid("gym_id")
+    .references(() => gymsTable.id, { onDelete: "cascade" }),
+
   gymName: text("gym_name").notNull(),
   address: text("address").notNull(),
   phone: text("phone").notNull(),
