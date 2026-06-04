@@ -35,6 +35,13 @@ async function buildAll() {
       "dotenv",
       "swagger-ui-express",
       "swagger-jsdoc",
+      "zod",
+      "zod/v4",
+      "jsonwebtoken",
+      "@whiskeysockets/baileys",
+      "@hapi/boom",
+      "qrcode-terminal",
+      "@sentry/node",
       "*.node",
       "sharp",
       "better-sqlite3",
@@ -125,7 +132,7 @@ globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
 // Load environment variables before any other code runs
-__dotenv.config({ path: __bannerPath.join(__bannerPath.dirname(globalThis.__filename), '../.env') });
+__dotenv.config({ path: __bannerPath.join(__bannerPath.dirname(globalThis.__filename), '../../.env') });
     `,
     },
   });

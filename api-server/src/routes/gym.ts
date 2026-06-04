@@ -123,7 +123,7 @@ router.post("/auth/login", (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ message: "Email and password required" });
   const user = getOrCreateUserByEmail(email.trim().toLowerCase());
-  const token = jwt.sign({ id: user.id }, SECRET, { expiresIn: "30d" });
+  const token = jwt.sign({ id: user.id }, SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || "7d" });
   const { avatar, ...safeUser } = user;
   return res.json({ token, user: { ...safeUser, hasAvatar: !!avatar } });
 });
@@ -303,7 +303,7 @@ router.post("/auth/signup", async (req, res) => {
   };
   userStore.set(id, user);
   emailStore.set(emailKey, id);
-  const token = jwt.sign({ id }, SECRET, { expiresIn: "30d" });
+  const token = jwt.sign({ id }, SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || "7d" });
   const { avatar, ...safeUser } = user;
   return res.json({ token, user: safeUser });
 });

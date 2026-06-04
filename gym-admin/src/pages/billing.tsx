@@ -9,8 +9,97 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { DollarSign, AlertCircle, CheckCircle, Plus, Search } from "lucide-react";
+import { DollarSign, AlertCircle, CheckCircle, Plus, Search, Printer } from "lucide-react";
 import { format } from "date-fns";
+
+function buildInvoiceHtml(inv: { id: number; memberName: string; plan: string; amount: number; dueDate?: string; paidDate?: string; isPaid: boolean; phone?: string }) {
+  const statusColor = inv.isPaid ? "#16a34a" : "#dc2626";
+  const statusBg = inv.isPaid ? "#dcfce7" : "#fee2e2";
+  const statusText = inv.isPaid ? "PAID" : "UNPAID";
+  const statusNote = inv.isPaid
+    ? "Payment received on " + (inv.paidDate || "—")
+    : "Payment due by " + (inv.dueDate || "—");
+  const now = new Date().toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
+  const paidRow = inv.isPaid
+    ? "<tr><td class=\"lbl\">Paid On</td><td class=\"val\">" + (inv.paidDate || "—") + "</td></tr>"
+    : "";
+  const phoneRow = inv.phone
+    ? "<p class=\"member-phone\">" + inv.phone + "</p>"
+    : "";
+  const amountFmt = inv.amount.toLocaleString("en-PK");
+
+  const css = [
+    "*{margin:0;padding:0;box-sizing:border-box}",
+    "body{font-family:'Segoe UI',Arial,sans-serif;background:#f1f5f9;padding:24px 16px}",
+    ".toolbar{max-width:700px;margin:0 auto 16px;display:flex;gap:10px}",
+    ".print-btn{background:#0f172a;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.4px;display:flex;align-items:center;gap:6px}",
+    ".print-btn:hover{background:#1e293b}",
+    ".page{background:#fff;max-width:700px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12)}",
+    ".hdr{background:#0f172a;padding:28px 36px;display:table;width:100%;table-layout:fixed}",
+    ".hdr-left{display:table-cell;vertical-align:middle}",
+    ".hdr-right{display:table-cell;vertical-align:middle;text-align:right}",
+    ".gym-name{font-size:20px;font-weight:800;color:#fff;letter-spacing:1px;text-transform:uppercase}",
+    ".gym-sub{font-size:10px;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;margin-top:3px}",
+    ".inv-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:2px}",
+    ".inv-num{font-size:26px;font-weight:800;color:#f97316;margin-top:2px}",
+    ".inv-date{font-size:10px;color:#94a3b8;margin-top:3px}",
+    ".ribbon{background:#1e293b;padding:9px 36px;display:table;width:100%;table-layout:fixed}",
+    ".ribbon-left{display:table-cell;vertical-align:middle}",
+    ".ribbon-right{display:table-cell;vertical-align:middle;text-align:right}",
+    ".status-pill{display:inline-block;padding:3px 12px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:1.5px;background:" + statusBg + ";color:" + statusColor + "}",
+    ".ribbon-note{font-size:10px;color:#94a3b8}",
+    ".bd{padding:32px 36px}",
+    ".sec-lbl{font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}",
+    ".member-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;margin-bottom:24px}",
+    ".member-name{font-size:17px;font-weight:700;color:#0f172a}",
+    ".member-phone{font-size:12px;color:#64748b;margin-top:2px}",
+    "table.det{width:100%;border-collapse:collapse;margin-bottom:24px}",
+    "table.det th{text-align:left;font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;padding:6px 0;border-bottom:2px solid #e2e8f0}",
+    "table.det td{padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:13px}",
+    "td.lbl{color:#64748b;width:45%}",
+    "td.val{font-weight:600;color:#0f172a;text-align:right}",
+    "tr.amt td{padding-top:18px;border-bottom:none}",
+    "tr.amt td.lbl{font-size:12px;font-weight:700;color:#0f172a}",
+    "tr.amt td.val{font-size:20px;font-weight:800}",
+    ".cap{text-transform:capitalize}",
+    ".ft{background:#f8fafc;border-top:1px solid #e2e8f0;padding:18px 36px;display:table;width:100%;table-layout:fixed}",
+    ".ft-left{display:table-cell;vertical-align:middle;font-size:11px;color:#94a3b8}",
+    ".ft-right{display:table-cell;vertical-align:middle;text-align:right;font-size:10px;font-weight:700;color:#0f172a;letter-spacing:1px;text-transform:uppercase}",
+    "@media print{body{background:#fff;padding:0}.toolbar{display:none}.page{box-shadow:none;border-radius:0;max-width:100%}}",
+  ].join("");
+
+  return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>"
+    + "<title>Invoice #" + inv.id + " — " + inv.memberName + "</title>"
+    + "<style>" + css + "</style></head><body>"
+    + "<div class=\"toolbar\">"
+    + "<button class=\"print-btn\" onclick=\"window.print()\">&#128438; Print Invoice</button>"
+    + "</div>"
+    + "<div class=\"page\">"
+    + "<div class=\"hdr\">"
+    + "<div class=\"hdr-left\"><div class=\"gym-name\">Core X Gym</div><div class=\"gym-sub\">Fitness &amp; Wellness</div></div>"
+    + "<div class=\"hdr-right\"><div class=\"inv-label\">Invoice</div><div class=\"inv-num\">#" + inv.id + "</div><div class=\"inv-date\">Printed: " + now + "</div></div>"
+    + "</div>"
+    + "<div class=\"ribbon\">"
+    + "<div class=\"ribbon-left\"><span class=\"status-pill\">" + statusText + "</span></div>"
+    + "<div class=\"ribbon-right\"><span class=\"ribbon-note\">" + statusNote + "</span></div>"
+    + "</div>"
+    + "<div class=\"bd\">"
+    + "<div class=\"sec-lbl\">Bill To</div>"
+    + "<div class=\"member-box\"><div class=\"member-name\">" + inv.memberName + "</div>" + phoneRow + "</div>"
+    + "<div class=\"sec-lbl\">Invoice Details</div>"
+    + "<table class=\"det\"><thead><tr><th>Description</th><th style=\"text-align:right\">Details</th></tr></thead>"
+    + "<tbody>"
+    + "<tr><td class=\"lbl\">Membership Plan</td><td class=\"val cap\">" + inv.plan + " Plan</td></tr>"
+    + "<tr><td class=\"lbl\">Due Date</td><td class=\"val\">" + (inv.dueDate || "—") + "</td></tr>"
+    + paidRow
+    + "<tr><td class=\"lbl\">Status</td><td class=\"val\" style=\"color:" + statusColor + "\">" + statusText + "</td></tr>"
+    + "<tr class=\"amt\"><td class=\"lbl\">Total Amount</td><td class=\"val\">PKR " + amountFmt + "</td></tr>"
+    + "</tbody></table>"
+    + "</div>"
+    + "<div class=\"ft\"><div class=\"ft-left\">Thank you for choosing Core X Gym!</div><div class=\"ft-right\">Core X</div></div>"
+    + "</div>"
+    + "</body></html>";
+}
 
 export default function Billing() {
   const [search, setSearch] = useState("");
@@ -53,6 +142,23 @@ export default function Billing() {
     } catch {
       toast({ title: "Failed to mark as unpaid", variant: "destructive" });
     }
+  };
+
+  const printInvoice = (inv: any) => {
+    const isPaid = inv.status === "paid";
+    const html = buildInvoiceHtml({
+      id: inv.id,
+      memberName: inv.memberName,
+      plan: inv.plan,
+      amount: Number(inv.amount),
+      dueDate: inv.dueDate,
+      paidDate: inv.paidDate,
+      isPaid,
+    });
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) win.focus();
   };
 
   const handleCreate = async () => {
@@ -179,15 +285,18 @@ export default function Billing() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {inv.status === "unpaid" ? (
-                          <Button size="sm" variant="outline" onClick={() => handleMarkPaid(inv.id)} disabled={markPaid.isPending}>
-                            Mark Paid
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleMarkUnpaid(inv.id)} disabled={markUnpaid.isPending}>
-                            Mark Unpaid
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {inv.status === "unpaid" ? (
+                            <Button size="sm" variant="outline" onClick={() => handleMarkPaid(inv.id)} disabled={markPaid.isPending}>
+                              Mark Paid
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleMarkUnpaid(inv.id)} disabled={markUnpaid.isPending}>
+                              Mark Unpaid
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => printInvoice(inv)}><Printer className="h-4 w-4" /></Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

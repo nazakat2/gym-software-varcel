@@ -1342,6 +1342,80 @@ export const useCheckIn = <
   return useMutation(getCheckInMutationOptions(options));
 };
 
+export const checkOut = async (
+  body: { memberId: number },
+  options?: RequestInit,
+): Promise<Attendance> =>
+  customFetch<Attendance>(`/api/attendance/checkout`, {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(body),
+  });
+
+export const getCheckOutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkOut>>,
+    TError,
+    { data: { memberId: number } },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkOut>>,
+  TError,
+  { data: { memberId: number } },
+  TContext
+> => {
+  const mutationKey = ["checkOut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkOut>>,
+    { data: { memberId: number } }
+  > = (props) => {
+    const { data } = props ?? {};
+    return checkOut(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckOutMutationResult = NonNullable<Awaited<ReturnType<typeof checkOut>>>;
+export type CheckOutMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Check out a member
+ */
+export const useCheckOut = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkOut>>,
+    TError,
+    { data: { memberId: number } },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkOut>>,
+  TError,
+  { data: { memberId: number } },
+  TContext
+> => {
+  return useMutation(getCheckOutMutationOptions(options));
+};
+
 /**
  * @summary Today attendance stats
  */

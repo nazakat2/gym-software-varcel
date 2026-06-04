@@ -305,7 +305,7 @@ export default function Reports() {
   };
 
   // ── DOWNLOAD: Attendance ──────────────────────────────────────────────────
-  const downloadAttendance = () => {
+  const downloadAttendance = async () => {
     setDownloading("attendance");
     const doc = new jsPDF();
     const pw = doc.internal.pageSize.getWidth();
@@ -325,19 +325,35 @@ export default function Reports() {
       y += 8;
     }
 
-    if (attendanceChart.length === 0) {
+    // Fetch detailed attendance records with member names and times
+    let detailedRecords: any[] = [];
+    try {
+      detailedRecords = await fetch(`/api/attendance?month=${selectedMonth}`).then(r => r.json());
+    } catch { detailedRecords = []; }
+
+    if (detailedRecords.length === 0) {
       doc.setFontSize(10); doc.setTextColor(150, 150, 150);
       doc.text("No attendance records found for this month.", 14, y + 6);
       doc.setTextColor(0, 0, 0);
     } else {
       autoTable(doc, {
         startY: y,
-        head: [["Date", "Visits"]],
-        body: attendanceChart.map((r: any) => [r.day, r.count]),
-        headStyles: { fillColor: [227, 28, 37], textColor: 255 },
+        head: [["#", "Member Name", "Date", "Check In", "Check Out"]],
+        body: detailedRecords.map((r: any, i: number) => [
+          i + 1,
+          r.memberName || "—",
+          r.date || "—",
+          r.checkInTime || "—",
+          r.checkOutTime || "—",
+        ]),
+        headStyles: { fillColor: [227, 28, 37], textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: [255, 245, 245] },
-        styles: { fontSize: 11, cellPadding: 4 },
-        columnStyles: { 1: { fontStyle: "bold", textColor: [227, 28, 37] } },
+        styles: { fontSize: 9, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 10 },
+          3: { textColor: [34, 197, 94], fontStyle: "bold" },
+          4: { textColor: [100, 116, 139] },
+        },
       });
     }
 

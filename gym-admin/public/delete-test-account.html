@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Delete Test Account</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #dc2626;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+        .link {
+            margin-top: 10px;
+            display: block;
+            color: #2563eb;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗑️ Delete Test Account</h1>
+        <p>Enter the owner email to delete the test gym account:</p>
+
+        <input
+            type="email"
+            id="ownerEmail"
+            placeholder="mrsarimofficial@gmail.com"
+            value="mrsarimofficial@gmail.com"
+        />
+
+        <button onclick="deleteAccount()">Delete Test Account</button>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        async function deleteAccount() {
+            const email = document.getElementById('ownerEmail').value;
+            const resultDiv = document.getElementById('result');
+
+            if (!email) {
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Please enter an email address';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/onboarding/delete-test-account', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ownerEmail: email })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.className = 'result success';
+                    resultDiv.style.display = 'block';
+
+                    // Clear previous content
+                    resultDiv.textContent = '';
+
+                    // Build success message safely
+                    const successText = document.createTextNode(
+                        `✅ Success! Account deleted: ${data.deleted.owner} (${data.deleted.email}). Gym: ${data.deleted.gym || 'N/A'}`
+                    );
+                    resultDiv.appendChild(successText);
+
+                    // Add link
+                    const br = document.createElement('br');
+                    const br2 = document.createElement('br');
+                    const link = document.createElement('a');
+                    link.href = '/register';
+                    link.textContent = 'Go to Registration Page';
+                    link.className = 'link';
+
+                    resultDiv.appendChild(br);
+                    resultDiv.appendChild(br2);
+                    resultDiv.appendChild(link);
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.style.display = 'block';
+                    resultDiv.textContent = `❌ Error: ${data.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

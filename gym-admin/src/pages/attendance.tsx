@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListAttendance, useCheckIn, useGetTodayAttendanceStats, useListMembers } from "@workspace/api-client-react";
+import { useListAttendance, useCheckIn, useCheckOut, useGetTodayAttendanceStats, useListMembers } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarCheck, Users, UserCheck, Search, LogIn } from "lucide-react";
+import { CalendarCheck, Users, UserCheck, Search, LogIn, LogOut } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Attendance() {
@@ -18,10 +18,26 @@ export default function Attendance() {
   const { data: stats } = useGetTodayAttendanceStats();
   const { data: members } = useListMembers();
   const checkIn = useCheckIn();
+  const checkOut = useCheckOut();
 
   const filtered = (attendanceList || []).filter((a) =>
     a.memberName?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleCheckOut = async () => {
+    if (!selectedMemberId) {
+      toast({ title: "Please select a member", variant: "destructive" });
+      return;
+    }
+    try {
+      await checkOut.mutateAsync({ data: { memberId: parseInt(selectedMemberId) } });
+      toast({ title: "Member checked out successfully" });
+      setSelectedMemberId("");
+      refetch();
+    } catch {
+      toast({ title: "Failed to check out member", variant: "destructive" });
+    }
+  };
 
   const handleCheckIn = async () => {
     if (!selectedMemberId) {
@@ -96,6 +112,10 @@ export default function Attendance() {
             <Button onClick={handleCheckIn} disabled={checkIn.isPending}>
               <LogIn className="mr-2 h-4 w-4" />
               Check In
+            </Button>
+            <Button variant="secondary" onClick={handleCheckOut} disabled={checkOut.isPending}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Check Out
             </Button>
           </div>
         </CardContent>

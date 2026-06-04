@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,23 @@ export default function AddMember() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: employees } = useListEmployees();
-  const trainers = (employees || []).filter(e => e.role === "trainer" || e.role === "Trainer");
+  const trainers = (employees || []).filter(e => e.role === "trainer");
+
+  const [planPrices, setPlanPrices] = useState<Record<string, number>>({
+    daily: 200, weekly: 800, monthly: 3000, quarterly: 8000, yearly: 28000,
+  });
+
+  useEffect(() => {
+    fetch("/api/business").then(r => r.json()).then(s => {
+      setPlanPrices({
+        daily: parseFloat(s.dailyFee || "200"),
+        weekly: parseFloat(s.weeklyFee || "800"),
+        monthly: parseFloat(s.monthlyFee || "3000"),
+        quarterly: parseFloat(s.quarterlyFee || "8000"),
+        yearly: parseFloat(s.yearlyFee || "28000"),
+      });
+    }).catch(() => {});
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -68,6 +84,7 @@ export default function AddMember() {
   const [planStartDate, setPlanStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [fitnessGoal, setFitnessGoal] = useState("general");
   const [trainerId, setTrainerId] = useState("none");
+  const [trainerCommission, setTrainerCommission] = useState("");
   const [referralSource, setReferralSource] = useState("");
 
   // Health
@@ -108,6 +125,7 @@ export default function AddMember() {
         plan, planStartDate,
         fitnessGoal, referralSource: referralSource || null,
         assignedTrainerId: (trainerId && trainerId !== "none") ? parseInt(trainerId) : null,
+        commissionPercent: (trainerId && trainerId !== "none" && trainerCommission) ? parseFloat(trainerCommission) : null,
         photoUrl: photoPreview || null,
       });
 
@@ -293,11 +311,11 @@ export default function AddMember() {
                 <Select value={plan} onValueChange={setPlan}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="daily">Daily (Rs 200)</SelectItem>
-                    <SelectItem value="weekly">Weekly (Rs 800)</SelectItem>
-                    <SelectItem value="monthly">Monthly (Rs 3,000)</SelectItem>
-                    <SelectItem value="quarterly">Quarterly (Rs 8,000)</SelectItem>
-                    <SelectItem value="yearly">Yearly (Rs 28,000)</SelectItem>
+                    <SelectItem value="daily">Daily (Rs {planPrices.daily.toLocaleString()})</SelectItem>
+                    <SelectItem value="weekly">Weekly (Rs {planPrices.weekly.toLocaleString()})</SelectItem>
+                    <SelectItem value="monthly">Monthly (Rs {planPrices.monthly.toLocaleString()})</SelectItem>
+                    <SelectItem value="quarterly">Quarterly (Rs {planPrices.quarterly.toLocaleString()})</SelectItem>
+                    <SelectItem value="yearly">Yearly (Rs {planPrices.yearly.toLocaleString()})</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -321,7 +339,7 @@ export default function AddMember() {
               </div>
               <div className="space-y-1">
                 <Label>Assign Trainer</Label>
-                <Select value={trainerId} onValueChange={setTrainerId}>
+                <Select value={trainerId} onValueChange={v => { setTrainerId(v); setTrainerCommission(""); }}>
                   <SelectTrigger><SelectValue placeholder="No trainer assigned" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No trainer assigned</SelectItem>
@@ -329,6 +347,19 @@ export default function AddMember() {
                   </SelectContent>
                 </Select>
               </div>
+              {trainerId && trainerId !== "none" && (
+                <div className="space-y-1">
+                  <Label>Commission %</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 30"
+                    value={trainerCommission}
+                    onChange={e => setTrainerCommission(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="space-y-1">
                 <Label>Referral Source</Label>
                 <Select value={referralSource} onValueChange={setReferralSource}>
@@ -339,6 +370,27 @@ export default function AddMember() {
                 </Select>
               </div>
             </div>
+            {trainerId && trainerId !== "none" && trainerCommission && Number(trainerCommission) > 0 && (() => {
+              const fee = planPrices[plan] ?? 0;
+              const commission = Math.round(fee * Number(trainerCommission) / 100);
+              const gymRevenue = fee - commission;
+              return (
+                <div className="mt-4 rounded-lg border bg-muted/40 p-4 grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground mb-1">Membership Fee</div>
+                    <div className="font-semibold">PKR {fee.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-1">Trainer Commission ({trainerCommission}%)</div>
+                    <div className="font-semibold text-amber-500">PKR {commission.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-1">Gym Revenue</div>
+                    <div className="font-semibold text-green-500">PKR {gymRevenue.toLocaleString()}</div>
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 

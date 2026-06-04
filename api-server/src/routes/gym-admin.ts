@@ -1,7 +1,25 @@
 import { Router, Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import { authLimiter } from "../middleware/rate-limit";
+
+// ── Helper: extract gymId from JWT Bearer token ───────────────────────────
+function getGymIdFromRequest(req: Request): string | null {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.slice(7);
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) return null;
+    const decoded = jwt.verify(token, jwtSecret) as any;
+    return decoded.gymId || null;
+  } catch {
+    return null;
+  }
+}
 
 // Error handling wrapper for async routes
-const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) => 
+const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
   async (req: Request, res: Response, next: NextFunction) => {
   try {
     await fn(req, res, next);
@@ -14,7 +32,7 @@ const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => P
     });
   }
 };
-import nodemailer from "nodemailer";
+import { EmailService } from "../services/email.service";
 import { db } from "@workspace/db";
 import {
   membersTable, measurementsTable, attendanceTable, employeesTable,
@@ -31,14 +49,6 @@ import { eq, desc, asc, and, like, or, sql, gte, lte, count } from "drizzle-orm"
 import { otpsTable } from "@workspace/db";
 
 const router = Router();
-
-// ── Email transporter ──────────────────────────────────────────────────────
-const emailUser = process.env["EMAIL_USER"] || "";
-const emailPass = process.env["EMAIL_PASS"] || "";
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: { user: emailUser, pass: emailPass },
-});
 
 // ── Admin Auth ────────────────────────────────────────────────────────────
 /**
@@ -96,16 +106,52 @@ const transporter = nodemailer.createTransport({
  *       403:
  *         description: Account is inactive
  */
-router.post("/admin/auth/login", async (req, res) => {
+router.post("/admin/auth/login", authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: "Email and password required" });
     const [user] = await db.select().from(adminUsersTable).where(eq(adminUsersTable.email, email.toLowerCase().trim()));
-    if (!user || user.password !== password) return res.status(401).json({ message: "Invalid email or password" });
+    if (!user) return res.status(401).json({ message: "Invalid email or password" });
+
+    // Compare hashed password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) return res.status(401).json({ message: "Invalid email or password" });
+
     if (user.status !== "active") return res.status(403).json({ message: "Account is inactive" });
+
+    // Update last login
     await db.update(adminUsersTable).set({ lastLogin: new Date().toISOString() }).where(eq(adminUsersTable.id, user.id));
+
+    // Generate JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error("JWT_SECRET not configured");
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user.id.toString(),
+        gymId: user.gymId,
+        role: user.role,
+        email: user.email,
+        permissions: {
+          members: user.permissions || ["*"],
+          billing: user.permissions || ["*"],
+          attendance: user.permissions || ["*"],
+          reports: user.permissions || ["*"],
+          inventory: user.permissions || ["*"],
+          settings: user.permissions || ["*"],
+        },
+      },
+      jwtSecret,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    );
+
     const { password: _, ...safeUser } = user;
-    return res.json({ user: safeUser });
+    return res.json({
+      user: safeUser,
+      token
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[LOGIN ERROR]", msg);
@@ -210,22 +256,7 @@ router.post("/admin/auth/forgot-password", async (req, res) => {
   await db.insert(otpsTable).values({ email: emailKey, otp, type: "admin-reset", expiresAt });
 
   try {
-    await transporter.sendMail({
-      from: `"GymAdmin" <${emailUser}>`,
-      to: email,
-      subject: "Password Reset OTP — GymAdmin",
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #eee;border-radius:12px;">
-          <h2 style="color:#E31C25;margin-top:0;">Password Reset</h2>
-          <p>Hello <strong>${user.name}</strong>,</p>
-          <p>Use the OTP below to reset your GymAdmin password. It expires in <strong>10 minutes</strong>.</p>
-          <div style="background:#f5f5f5;border-radius:8px;padding:24px;text-align:center;margin:24px 0;">
-            <span style="font-size:36px;font-weight:bold;letter-spacing:10px;color:#E31C25;">${otp}</span>
-          </div>
-          <p style="color:#888;font-size:13px;">If you did not request this, please ignore this email.</p>
-        </div>
-      `,
-    });
+    await EmailService.sendPasswordResetEmail(emailKey, otp, user.name);
     return res.json({ message: "OTP sent to your email" });
   } catch (err) {
     console.error("Email error:", err);
@@ -326,7 +357,8 @@ router.post("/admin/auth/reset-password", async (req, res) => {
     return res.status(400).json({ message: "OTP has expired. Please request a new one." });
   }
   if (entry.otp !== String(otp)) return res.status(400).json({ message: "Invalid OTP" });
-  await db.update(adminUsersTable).set({ password: newPassword }).where(eq(adminUsersTable.email, emailKey));
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await db.update(adminUsersTable).set({ password: hashedPassword }).where(eq(adminUsersTable.email, emailKey));
   await db.delete(otpsTable).where(eq(otpsTable.id, entry.id));
   return res.json({ message: "Password reset successful" });
 });
@@ -342,8 +374,6 @@ router.post("/admin/auth/send-signup-otp", async (req, res) => {
     .from(adminUsersTable).where(eq(adminUsersTable.email, emailKey));
   if (existing) return res.status(409).json({ message: "An account with this email already exists" });
 
-  if (!emailUser || !emailPass) return res.status(503).json({ message: "Email service not configured" });
-
   const validRole = role === "admin" ? "admin" : "staff";
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   await db.delete(otpsTable).where(and(eq(otpsTable.email, emailKey), eq(otpsTable.type, "admin-signup")));
@@ -353,22 +383,7 @@ router.post("/admin/auth/send-signup-otp", async (req, res) => {
   });
 
   try {
-    await transporter.sendMail({
-      from: `"GymAdmin" <${emailUser}>`,
-      to: email,
-      subject: "GymAdmin — Verify Your Email",
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #eee;border-radius:12px;">
-          <h2 style="color:#E31C25;margin-top:0;">Verify Your Email</h2>
-          <p>Hi <strong>${name.trim()}</strong>, welcome to GymAdmin!</p>
-          <p>Use this OTP to complete your account registration. It expires in <strong>10 minutes</strong>.</p>
-          <div style="background:#f5f5f5;border-radius:8px;padding:24px;text-align:center;margin:24px 0;">
-            <span style="font-size:36px;font-weight:bold;letter-spacing:10px;color:#E31C25;">${otp}</span>
-          </div>
-          <p style="color:#888;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>
-        </div>
-      `,
-    });
+    await EmailService.sendOtpEmail(emailKey, otp, name.trim());
     return res.json({ message: "Verification OTP sent to your email" });
   } catch (err) {
     console.error("Signup email error:", err);
@@ -483,13 +498,17 @@ function today() {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/dashboard/stats", asyncHandler(async (_req, res) => {
+router.get("/dashboard/stats", asyncHandler(async (req, res) => {
+  // Extract gymId from JWT token
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized: no gym context" });
+
   const [membersAll, attending, invoicesAll, employees, products] = await Promise.all([
-    db.select().from(membersTable),
-    db.select().from(attendanceTable).where(eq(attendanceTable.date, today())),
-    db.select().from(invoicesTable),
-    db.select().from(employeesTable).where(eq(employeesTable.status, "active")),
-    db.select().from(productsTable),
+    db.select().from(membersTable).where(eq(membersTable.gymId, gymId)),
+    db.select().from(attendanceTable).where(and(eq(attendanceTable.gymId, gymId), eq(attendanceTable.date, today()))),
+    db.select().from(invoicesTable).where(eq(invoicesTable.gymId, gymId)),
+    db.select().from(employeesTable).where(and(eq(employeesTable.gymId, gymId), eq(employeesTable.status, "active"))),
+    db.select().from(productsTable).where(eq(productsTable.gymId, gymId)),
   ]);
 
   const activeMembers = membersAll.filter(m => m.status === "active").length;
@@ -548,11 +567,14 @@ router.get("/dashboard/stats", asyncHandler(async (_req, res) => {
  *                   icon:
  *                     type: string
  */
-router.get("/dashboard/recent-activity", async (_req, res) => {
+router.get("/dashboard/recent-activity", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized: no gym context" });
+
   const [members, invoices, attendance] = await Promise.all([
-    db.select().from(membersTable).orderBy(desc(membersTable.createdAt)).limit(5),
-    db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt)).limit(5),
-    db.select().from(attendanceTable).orderBy(desc(attendanceTable.createdAt)).limit(5),
+    db.select().from(membersTable).where(eq(membersTable.gymId, gymId)).orderBy(desc(membersTable.createdAt)).limit(5),
+    db.select().from(invoicesTable).where(eq(invoicesTable.gymId, gymId)).orderBy(desc(invoicesTable.createdAt)).limit(5),
+    db.select().from(attendanceTable).where(eq(attendanceTable.gymId, gymId)).orderBy(desc(attendanceTable.createdAt)).limit(5),
   ]);
 
   const activities = [
@@ -592,9 +614,12 @@ router.get("/dashboard/recent-activity", async (_req, res) => {
  *                   expenses:
  *                     type: number
  */
-router.get("/dashboard/revenue-chart", async (_req, res) => {
-  const invoices = await db.select().from(invoicesTable);
-  const vouchers = await db.select().from(vouchersTable);
+router.get("/dashboard/revenue-chart", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized: no gym context" });
+
+  const invoices = await db.select().from(invoicesTable).where(eq(invoicesTable.gymId, gymId));
+  const vouchers = await db.select().from(vouchersTable).where(eq(vouchersTable.gymId, gymId));
 
   const months: Record<string, { revenue: number; expenses: number }> = {};
   for (let i = 5; i >= 0; i--) {
@@ -648,8 +673,11 @@ router.get("/dashboard/revenue-chart", async (_req, res) => {
  *                 yearly:
  *                   type: integer
  */
-router.get("/dashboard/membership-breakdown", async (_req, res) => {
-  const members = await db.select().from(membersTable);
+router.get("/dashboard/membership-breakdown", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized: no gym context" });
+
+  const members = await db.select().from(membersTable).where(eq(membersTable.gymId, gymId));
   const counts: Record<string, number> = { monthly: 0, quarterly: 0, yearly: 0 };
   for (const m of members) {
     if (counts[m.plan] !== undefined) counts[m.plan]++;
@@ -701,8 +729,13 @@ router.get("/dashboard/membership-breakdown", async (_req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 router.get("/members", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { status, search } = req.query as { status?: string; search?: string };
-  let rows = await db.select().from(membersTable).orderBy(desc(membersTable.createdAt));
+  let rows = await db.select().from(membersTable)
+    .where(eq(membersTable.gymId, gymId))
+    .orderBy(desc(membersTable.createdAt));
 
   if (status && status !== "all") rows = rows.filter(m => m.status === status);
   if (search) {
@@ -713,7 +746,6 @@ router.get("/members", asyncHandler(async (req, res) => {
       m.cnic.includes(s)
     );
   }
-  // Update status based on expiry
   const now = today();
   rows = rows.map(m => ({ ...m, status: m.planExpiryDate < now ? "expired" : "active" }));
   res.json(rows);
@@ -793,13 +825,17 @@ router.get("/members", asyncHandler(async (req, res) => {
  *               $ref: '#/components/schemas/Member'
  */
 router.post("/members", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const {
     name, phone, whatsapp, email, gender, dob, cnic, city, area, address, bloodGroup,
     emergencyContactName, emergencyContactPhone, fitnessGoal, referralSource,
-    photoUrl, plan, planStartDate, assignedTrainerId,
+    photoUrl, plan, planStartDate, assignedTrainerId, commissionPercent,
   } = req.body;
   const planExpiryDate = calcExpiry(planStartDate, plan);
   const [member] = await db.insert(membersTable).values({
+    gymId,
     name, phone, whatsapp: whatsapp || null, email: email || null,
     gender: gender || "male", dob: dob || null, cnic,
     city: city || null, area: area || null, address: address || null,
@@ -811,24 +847,50 @@ router.post("/members", async (req, res) => {
     photoUrl: photoUrl || null,
     plan, planStartDate, planExpiryDate, status: "active",
     assignedTrainerId: assignedTrainerId ? parseInt(assignedTrainerId) : null,
+    memberCode: `MEM-${Date.now()}`,
   }).returning();
 
   // Auto-create invoice
   const planPrices: Record<string, number> = { daily: 200, weekly: 800, monthly: 3000, quarterly: 8000, yearly: 28000 };
   await db.insert(invoicesTable).values({
+    gymId,
     memberId: member.id,
+    invoiceNumber: `INV-${Date.now()}`,
     amount: String(planPrices[plan] || 3000),
     plan, dueDate: planStartDate, status: "unpaid",
   });
 
   // Log membership history
   await db.insert(membershipHistoryTable).values({
+    gymId,
     memberId: member.id, plan, startDate: planStartDate, expiryDate: planExpiryDate,
     amount: String(planPrices[plan] || 3000), status: "active",
   });
 
+  // Create trainer commission subscription if commission % provided
+  if (assignedTrainerId && commissionPercent && parseFloat(commissionPercent) > 0) {
+    const planNames: Record<string, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" };
+    const [commPlan] = await db.insert(plansTable).values({
+      gymId,
+      name: `${planNames[plan] || plan} - ${commissionPercent}% Commission`,
+      totalFee: String(planPrices[plan] || 3000),
+      commissionType: "percentage",
+      commissionValue: String(commissionPercent),
+      isActive: false,
+    }).returning();
+    await db.insert(clientSubscriptionsTable).values({
+      gymId,
+      memberId: member.id,
+      trainerId: parseInt(assignedTrainerId),
+      planId: commPlan.id,
+      startDate: planStartDate,
+      status: "active",
+    });
+  }
+
   // Create notification
   await db.insert(adminNotificationsTable).values({
+    gymId,
     type: "new_member", title: "New Member Registered",
     message: `${name} has joined on the ${plan} plan.`, read: false,
   });
@@ -1208,6 +1270,9 @@ router.get("/members/:id/measurements", asyncHandler(async (req, res) => {
 
 // ── Measurements ──────────────────────────────────────────────────────────
 router.get("/measurements", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { memberId } = req.query as { memberId?: string };
   const measurements = await db.select({
     measurement: measurementsTable,
@@ -1216,7 +1281,12 @@ router.get("/measurements", asyncHandler(async (req, res) => {
     memberGender: membersTable.gender,
   }).from(measurementsTable)
     .leftJoin(membersTable, eq(measurementsTable.memberId, membersTable.id))
-    .where(memberId ? eq(measurementsTable.memberId, parseInt(memberId)) : undefined)
+    .where(
+      and(
+        eq(measurementsTable.gymId, gymId),
+        memberId ? eq(measurementsTable.memberId, parseInt(memberId)) : undefined
+      )
+    )
     .orderBy(desc(measurementsTable.createdAt));
 
   res.json(measurements.map(r => ({
@@ -1293,10 +1363,13 @@ router.get("/measurements", asyncHandler(async (req, res) => {
  *                       type: string
  */
 router.post("/measurements", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { memberId, weight, height, bodyFat, chest, waist, arms, hips, date, notes } = req.body;
   const bmi = calcBMI(weight, height);
   const [m] = await db.insert(measurementsTable).values({
-    memberId, weight: String(weight), height: String(height),
+    gymId, memberId, weight: String(weight), height: String(height),
     bmi: String(bmi), bodyFat: bodyFat ? String(bodyFat) : null,
     chest: chest ? String(chest) : null, waist: waist ? String(waist) : null,
     arms: arms ? String(arms) : null, hips: hips ? String(hips) : null,
@@ -1310,6 +1383,28 @@ router.post("/measurements", async (req, res) => {
     chest: chest ?? null, waist: waist ?? null, arms: arms ?? null, hips: hips ?? null,
   });
 });
+
+router.post("/upload-photo", asyncHandler(async (req, res) => {
+  const { dataUrl, filename = "photo.jpg" } = req.body as { dataUrl: string; filename?: string };
+  if (!dataUrl || !dataUrl.startsWith("data:")) {
+    res.status(400).json({ error: "Invalid dataUrl" });
+    return;
+  }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    res.json({ url: null });
+    return;
+  }
+  const { put } = await import("@vercel/blob");
+  const match = dataUrl.match(/^data:(.+);base64,(.+)$/);
+  if (!match) { res.status(400).json({ error: "Bad dataUrl format" }); return; }
+  const buffer = Buffer.from(match[2], "base64");
+  const blob = await put(`photos/${Date.now()}-${filename}`, buffer, {
+    access: "public",
+    contentType: match[1],
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+  res.json({ url: blob.url });
+}));
 
 router.patch("/measurements/:id/photos", asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id as string);
@@ -1384,7 +1479,10 @@ router.delete("/measurements/:id", async (req, res) => {
  *                         type: string
  */
 router.get("/attendance", async (req, res) => {
-  const { date, memberId } = req.query as { date?: string; memberId?: string };
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const { date, memberId, month } = req.query as { date?: string; memberId?: string; month?: string };
   const rows = await db.select({
     attendance: attendanceTable,
     memberName: membersTable.name,
@@ -1392,8 +1490,10 @@ router.get("/attendance", async (req, res) => {
     .leftJoin(membersTable, eq(attendanceTable.memberId, membersTable.id))
     .where(
       and(
+        eq(attendanceTable.gymId, gymId),
         date ? eq(attendanceTable.date, date) : undefined,
         memberId ? eq(attendanceTable.memberId, parseInt(memberId)) : undefined,
+        month ? and(gte(attendanceTable.date, month + "-01"), lte(attendanceTable.date, month + "-31")) : undefined,
       )
     )
     .orderBy(desc(attendanceTable.createdAt));
@@ -1438,14 +1538,65 @@ router.get("/attendance", async (req, res) => {
  *               $ref: '#/components/schemas/Attendance'
  */
 router.post("/attendance", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { memberId } = req.body;
   const now = new Date();
   const date = now.toISOString().split("T")[0];
   const checkInTime = now.toTimeString().slice(0, 5);
-  const [att] = await db.insert(attendanceTable).values({ memberId, date, checkInTime }).returning();
+  const [att] = await db.insert(attendanceTable).values({ gymId, memberId, date, checkInTime }).returning();
   const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
   res.status(201).json({ ...att, memberName: member?.name ?? "Unknown" });
 });
+
+/**
+ * @openapi
+ * /attendance/checkout:
+ *   post:
+ *     tags:
+ *       - Attendance
+ *     summary: Check out a member
+ *     description: Records check-out time for today's attendance record of a member
+ *     security:
+ *       - adminEmail: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - memberId
+ *             properties:
+ *               memberId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Check-out recorded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Attendance'
+ *       404:
+ *         description: No check-in record found for today
+ */
+router.post("/attendance/checkout", asyncHandler(async (req, res) => {
+  const { memberId } = req.body;
+  const date = today();
+  const checkOutTime = new Date().toTimeString().slice(0, 5);
+  const [att] = await db
+    .update(attendanceTable)
+    .set({ checkOutTime })
+    .where(and(eq(attendanceTable.memberId, memberId), eq(attendanceTable.date, date)))
+    .returning();
+  if (!att) {
+    res.status(404).json({ error: "No check-in found for today" });
+    return;
+  }
+  const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
+  res.json({ ...att, memberName: member?.name ?? "Unknown" });
+}));
 
 /**
  * @openapi
@@ -1475,9 +1626,14 @@ router.post("/attendance", async (req, res) => {
  *                   type: string
  *                   example: "09:00"
  */
-router.get("/attendance/today-stats", asyncHandler(async (_req, res) => {
+router.get("/attendance/today-stats", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const t = today();
-  const rows = await db.select().from(attendanceTable).where(eq(attendanceTable.date, t));
+  const rows = await db.select().from(attendanceTable).where(
+    and(eq(attendanceTable.gymId, gymId), eq(attendanceTable.date, t))
+  );
   const hours: Record<string, number> = {};
   for (const r of rows) {
     const h = r.checkInTime.split(":")[0];
@@ -1487,12 +1643,15 @@ router.get("/attendance/today-stats", asyncHandler(async (_req, res) => {
   res.json({ total: rows.length, present: rows.length, peakHour: peakHour === "N/A" ? "N/A" : `${peakHour}:00` });
 }));
 
-router.get("/attendance/monthly-chart", async (_req, res) => {
-  const rows = await db.select().from(attendanceTable).orderBy(attendanceTable.date);
+router.get("/attendance/monthly-chart", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(attendanceTable)
+    .where(eq(attendanceTable.gymId, gymId))
+    .orderBy(attendanceTable.date);
   const byDay: Record<string, number> = {};
-  for (const r of rows) {
-    byDay[r.date] = (byDay[r.date] || 0) + 1;
-  }
+  for (const r of rows) byDay[r.date] = (byDay[r.date] || 0) + 1;
   const last30: { day: string; count: number }[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date();
@@ -1524,12 +1683,14 @@ router.get("/attendance/monthly-chart", async (_req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Employee'
  */
-router.get("/employees", async (_req, res) => {
-  const rows = await db.select().from(employeesTable).orderBy(desc(employeesTable.createdAt));
-  res.json(rows.map(e => ({
-    ...e,
-    assignedMembers: e.assignedMembers ?? 0,
-  })));
+router.get("/employees", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(employeesTable)
+    .where(eq(employeesTable.gymId, gymId))
+    .orderBy(desc(employeesTable.createdAt));
+  res.json(rows.map(e => ({ ...e, assignedMembers: e.assignedMembers ?? 0 })));
 });
 
 /**
@@ -1580,8 +1741,12 @@ router.get("/employees", async (_req, res) => {
  *               $ref: '#/components/schemas/Employee'
  */
 router.post("/employees", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, role, phone, cnic, email, salary, commission, joinDate, address } = req.body;
   const [emp] = await db.insert(employeesTable).values({
+    gymId,
     name, role, phone, cnic: cnic || null, email: email || null,
     address: address || null,
     salary: salary,
@@ -1674,12 +1839,16 @@ router.delete("/employees/:id", async (req, res) => {
 
 // ── Billing ────────────────────────────────────────────────────────────────
 router.get("/billing", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { status, memberId } = req.query as { status?: string; memberId?: string };
   const rows = await db.select({
     invoice: invoicesTable,
     memberName: membersTable.name,
   }).from(invoicesTable)
     .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
+    .where(eq(invoicesTable.gymId, gymId))
     .orderBy(desc(invoicesTable.createdAt));
 
   let result = rows.map(r => ({
@@ -1693,8 +1862,15 @@ router.get("/billing", async (req, res) => {
 });
 
 router.post("/billing", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { memberId, amount, plan, dueDate } = req.body;
-  const [inv] = await db.insert(invoicesTable).values({ memberId, amount: String(amount), plan, dueDate, status: "unpaid" }).returning();
+  const [inv] = await db.insert(invoicesTable).values({
+    gymId,
+    memberId, amount: String(amount), plan, dueDate, status: "unpaid",
+    invoiceNumber: `INV-${Date.now()}`,
+  }).returning();
   const [member] = await db.select().from(membersTable).where(eq(membersTable.id, memberId));
   res.status(201).json({ ...inv, memberName: member?.name ?? "Unknown", amount });
 });
@@ -1805,8 +1981,11 @@ router.post("/billing/:id/unpay", asyncHandler(async (req, res) => {
   res.json({ ...updated, memberName: member?.name ?? "Unknown", amount: parseFloat(updated.amount as string) });
 }));
 
-router.get("/billing/dues-summary", async (_req, res) => {
-  const invoices = await db.select().from(invoicesTable);
+router.get("/billing/dues-summary", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const invoices = await db.select().from(invoicesTable).where(eq(invoicesTable.gymId, gymId));
   const now = today();
   const monthStart = now.slice(0, 7) + "-01";
   const totalDues = invoices.filter(i => i.status === "unpaid").reduce((s, i) => s + parseFloat(i.amount as string), 0);
@@ -1850,12 +2029,16 @@ router.get("/billing/dues-summary", async (_req, res) => {
  *                   supplierName:
  *                     type: string
  */
-router.get("/products", async (_req, res) => {
+router.get("/products", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const rows = await db.select({
     product: productsTable,
     supplierName: suppliersTable.name,
   }).from(productsTable)
     .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(eq(productsTable.gymId, gymId))
     .orderBy(desc(productsTable.createdAt));
 
   res.json(rows.map(r => ({
@@ -1904,9 +2087,12 @@ router.get("/products", async (_req, res) => {
  *         description: Product created successfully
  */
 router.post("/products", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, category, price, stock, supplierId, lowStockThreshold } = req.body;
   const [prod] = await db.insert(productsTable).values({
-    name, category, price: String(price), stock, supplierId: supplierId || null, lowStockThreshold,
+    gymId, name, category, price: String(price), stock, supplierId: supplierId || null, lowStockThreshold,
   }).returning();
   res.status(201).json({ ...prod, price });
 });
@@ -2018,12 +2204,16 @@ router.delete("/products/:id", async (req, res) => {
  *                     type: string
  *                     format: date
  */
-router.get("/sales", async (_req, res) => {
+router.get("/sales", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const rows = await db.select({
     sale: salesTable,
     productName: productsTable.name,
   }).from(salesTable)
     .leftJoin(productsTable, eq(salesTable.productId, productsTable.id))
+    .where(eq(salesTable.gymId, gymId))
     .orderBy(desc(salesTable.createdAt));
 
   res.json(rows.map(r => ({
@@ -2071,28 +2261,40 @@ router.get("/sales", async (_req, res) => {
  *         description: Sale recorded successfully
  */
 router.post("/sales", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { productId, quantity, status, customerName } = req.body;
   const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
   if (!product) return res.status(404).json({ message: "Product not found" });
   const totalAmount = parseFloat(product.price as string) * quantity;
   const date = today();
   const [sale] = await db.insert(salesTable).values({
-    productId, quantity, totalAmount: String(totalAmount), status, customerName: customerName || null, date,
+    gymId, productId, quantity, totalAmount: String(totalAmount), status, customerName: customerName || null, date,
   }).returning();
-  // Deduct stock
   await db.update(productsTable).set({ stock: product.stock - quantity }).where(eq(productsTable.id, productId));
   res.status(201).json({ ...sale, productName: product.name, totalAmount });
 });
 
 // ── POS Orders ─────────────────────────────────────────────────────────────
 
-router.get("/pos/products", async (_req, res) => {
-  const rows = await db.select().from(productsTable).where(sql`${productsTable.stock} > 0`).orderBy(productsTable.name);
+router.get("/pos/products", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(productsTable)
+    .where(and(eq(productsTable.gymId, gymId), sql`${productsTable.stock} > 0`))
+    .orderBy(productsTable.name);
   res.json(rows.map(r => ({ ...r, price: parseFloat(r.price as string) })));
 });
 
-router.get("/pos/products/low-stock", async (_req, res) => {
-  const rows = await db.select().from(productsTable).where(sql`${productsTable.stock} <= ${productsTable.lowStockThreshold}`).orderBy(productsTable.stock);
+router.get("/pos/products/low-stock", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(productsTable)
+    .where(and(eq(productsTable.gymId, gymId), sql`${productsTable.stock} <= ${productsTable.lowStockThreshold}`))
+    .orderBy(productsTable.stock);
   res.json(rows.map(r => ({ ...r, price: parseFloat(r.price as string) })));
 });
 
@@ -2140,6 +2342,9 @@ router.get("/pos/products/low-stock", async (_req, res) => {
  *                     format: date-time
  */
 router.get("/pos/orders", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { date, status, memberId } = req.query as Record<string, string>;
 
   const orders = await db.select({
@@ -2147,6 +2352,7 @@ router.get("/pos/orders", async (req, res) => {
     memberName: membersTable.name,
   }).from(posOrdersTable)
     .leftJoin(membersTable, eq(posOrdersTable.memberId, membersTable.id))
+    .where(eq(posOrdersTable.gymId, gymId))
     .orderBy(desc(posOrdersTable.createdAt));
 
   let filtered = orders;
@@ -2246,11 +2452,13 @@ router.get("/pos/orders/:id", async (req, res) => {
  *         description: Order created successfully
  */
 router.post("/pos/orders", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { memberId, customerName, items, discount, discountType, paymentMethod, paidAmount, notes } = req.body;
 
   if (!items || items.length === 0) return res.status(400).json({ message: "Cart is empty" });
 
-  // Calculate subtotal from items
   let subtotal = 0;
   const enrichedItems: { productId: number; productName: string; unitPrice: number; quantity: number; subtotal: number }[] = [];
 
@@ -2272,6 +2480,8 @@ router.post("/pos/orders", async (req, res) => {
   const date = today();
 
   const [order] = await db.insert(posOrdersTable).values({
+    gymId,
+    orderNumber: `ORD-${Date.now()}`,
     memberId: memberId || null,
     customerName: customerName || null,
     discount: String(discountAmt.toFixed(2)),
@@ -2286,7 +2496,6 @@ router.post("/pos/orders", async (req, res) => {
     date,
   }).returning();
 
-  // Insert items
   await db.insert(posOrderItemsTable).values(enrichedItems.map(i => ({
     orderId: order.id,
     productId: i.productId,
@@ -2296,7 +2505,6 @@ router.post("/pos/orders", async (req, res) => {
     subtotal: String(i.subtotal.toFixed(2)),
   })));
 
-  // Deduct stock
   for (const item of enrichedItems) {
     const [p] = await db.select({ stock: productsTable.stock }).from(productsTable).where(eq(productsTable.id, item.productId));
     await db.update(productsTable).set({ stock: p.stock - item.quantity }).where(eq(productsTable.id, item.productId));
@@ -2339,20 +2547,31 @@ router.post("/pos/orders/:id/return", async (req, res) => {
 });
 
 router.get("/pos/summary", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { date } = req.query as Record<string, string>;
   const targetDate = date || today();
-  const orders = await db.select().from(posOrdersTable).where(eq(posOrdersTable.date, targetDate));
+  const orders = await db.select().from(posOrdersTable)
+    .where(and(eq(posOrdersTable.gymId, gymId), eq(posOrdersTable.date, targetDate)));
   const total = orders.reduce((s, o) => s + parseFloat(o.totalAmount as string), 0);
   const paid = orders.reduce((s, o) => s + parseFloat(o.paidAmount as string), 0);
   const due = orders.reduce((s, o) => s + parseFloat(o.dueAmount as string), 0);
   const cashTotal = orders.filter(o => o.paymentMethod === "cash").reduce((s, o) => s + parseFloat(o.paidAmount as string), 0);
   const onlineTotal = paid - cashTotal;
-  const lowStock = await db.select().from(productsTable).where(sql`${productsTable.stock} <= ${productsTable.lowStockThreshold}`);
+  const lowStock = await db.select().from(productsTable)
+    .where(and(eq(productsTable.gymId, gymId), sql`${productsTable.stock} <= ${productsTable.lowStockThreshold}`));
   res.json({ date: targetDate, totalSales: orders.length, totalAmount: total, paidAmount: paid, dueAmount: due, cashTotal, onlineTotal, lowStockCount: lowStock.length });
 });
 
-router.get("/pos/members", async (_req, res) => {
-  const members = await db.select({ id: membersTable.id, name: membersTable.name, phone: membersTable.phone }).from(membersTable).where(eq(membersTable.status, "active")).orderBy(membersTable.name);
+router.get("/pos/members", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const members = await db.select({ id: membersTable.id, name: membersTable.name, phone: membersTable.phone })
+    .from(membersTable)
+    .where(and(eq(membersTable.gymId, gymId), eq(membersTable.status, "active")))
+    .orderBy(membersTable.name);
   res.json(members);
 });
 
@@ -2388,9 +2607,12 @@ router.get("/pos/members", async (_req, res) => {
  *                   address:
  *                     type: string
  */
-router.get("/suppliers", async (_req, res) => {
-  const suppliers = await db.select().from(suppliersTable).orderBy(desc(suppliersTable.createdAt));
-  const products = await db.select().from(productsTable);
+router.get("/suppliers", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const suppliers = await db.select().from(suppliersTable).where(eq(suppliersTable.gymId, gymId)).orderBy(desc(suppliersTable.createdAt));
+  const products = await db.select().from(productsTable).where(eq(productsTable.gymId, gymId));
   res.json(suppliers.map(s => ({
     ...s,
     productsCount: products.filter(p => p.supplierId === s.id).length,
@@ -2430,8 +2652,11 @@ router.get("/suppliers", async (_req, res) => {
  *         description: Supplier created successfully
  */
 router.post("/suppliers", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, contact, email, address } = req.body;
-  const [sup] = await db.insert(suppliersTable).values({ name, contact, email: email || null, address: address || null }).returning();
+  const [sup] = await db.insert(suppliersTable).values({ gymId, name, contact, email: email || null, address: address || null }).returning();
   res.status(201).json({ ...sup, productsCount: 0 });
 });
 
@@ -2478,8 +2703,11 @@ router.delete("/suppliers/:id", async (req, res) => {
  *                   balance:
  *                     type: string
  */
-router.get("/accounts", async (_req, res) => {
-  const rows = await db.select().from(accountsTable).orderBy(accountsTable.name);
+router.get("/accounts", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(accountsTable).where(eq(accountsTable.gymId, gymId)).orderBy(accountsTable.name);
   res.json(rows.map(r => ({ ...r, balance: parseFloat(r.balance as string) })));
 });
 
@@ -2518,12 +2746,16 @@ router.get("/accounts", async (_req, res) => {
  *                   accountId:
  *                     type: integer
  */
-router.get("/vouchers", async (_req, res) => {
+router.get("/vouchers", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const rows = await db.select({
     voucher: vouchersTable,
     accountName: accountsTable.name,
   }).from(vouchersTable)
     .leftJoin(accountsTable, eq(vouchersTable.accountId, accountsTable.id))
+    .where(eq(vouchersTable.gymId, gymId))
     .orderBy(desc(vouchersTable.createdAt));
 
   res.json(rows.map(r => ({
@@ -2572,8 +2804,14 @@ router.get("/vouchers", async (_req, res) => {
  *         description: Voucher created successfully
  */
 router.post("/vouchers", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { accountId, type, amount, description, date } = req.body;
-  const [v] = await db.insert(vouchersTable).values({ accountId, type, amount: String(amount), description, date }).returning();
+  const [v] = await db.insert(vouchersTable).values({
+    gymId, accountId, type, amount: String(amount), description,
+    date, voucherNumber: `VCH-${Date.now()}`,
+  }).returning();
   // Update account balance
   const [acc] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId));
   if (acc) {
@@ -2586,15 +2824,27 @@ router.post("/vouchers", async (req, res) => {
 });
 
 // ── Admin Users ────────────────────────────────────────────────────────────
-router.get("/admin/users", async (_req, res) => {
-  const rows = await db.select().from(adminUsersTable).orderBy(desc(adminUsersTable.createdAt));
-  res.json(rows);
+router.get("/admin/users", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(adminUsersTable)
+    .where(eq(adminUsersTable.gymId, gymId))
+    .orderBy(desc(adminUsersTable.createdAt));
+  res.json(rows.map(({ password: _, ...u }) => u));
 });
 
 router.post("/admin/users", async (req, res) => {
-  const { name, email, role, permissions, status } = req.body;
-  const [user] = await db.insert(adminUsersTable).values({ name, email, role, permissions: permissions || [], status }).returning();
-  res.status(201).json(user);
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const { name, email, role, permissions, status, password } = req.body;
+  const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash("changeme123", 10);
+  const [user] = await db.insert(adminUsersTable).values({
+    gymId, name, email, password: hashedPassword, role, permissions: permissions || [], status,
+  }).returning();
+  const { password: _, ...safeUser } = user;
+  res.status(201).json(safeUser);
 });
 
 router.put("/admin/users/:id", async (req, res) => {
@@ -2602,7 +2852,8 @@ router.put("/admin/users/:id", async (req, res) => {
   const { name, email, role, permissions, status } = req.body;
   const [updated] = await db.update(adminUsersTable).set({ name, email, role, permissions: permissions || [], status }).where(eq(adminUsersTable.id, id)).returning();
   if (!updated) return res.status(404).json({ message: "Not found" });
-  res.json(updated);
+  const { password: _, ...safeUser } = updated;
+  res.json(safeUser);
 });
 
 router.delete("/admin/users/:id", async (req, res) => {
@@ -2611,8 +2862,13 @@ router.delete("/admin/users/:id", async (req, res) => {
 });
 
 // ── Notifications ──────────────────────────────────────────────────────────
-router.get("/notifications", async (_req, res) => {
-  const rows = await db.select().from(adminNotificationsTable).orderBy(desc(adminNotificationsTable.createdAt)).limit(50);
+router.get("/notifications", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(adminNotificationsTable)
+    .where(eq(adminNotificationsTable.gymId, gymId))
+    .orderBy(desc(adminNotificationsTable.createdAt)).limit(50);
   res.json(rows);
 });
 
@@ -2622,12 +2878,17 @@ router.post("/notifications/:id/read", async (req, res) => {
 });
 
 // ── Business Settings ──────────────────────────────────────────────────────
-router.get("/business", async (_req, res) => {
-  const [settings] = await db.select().from(businessSettingsTable).limit(1);
+router.get("/business", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const [settings] = await db.select().from(businessSettingsTable)
+    .where(eq(businessSettingsTable.gymId, gymId)).limit(1);
   if (!settings) {
     const [created] = await db.insert(businessSettingsTable).values({
-      gymName: "GymFit Pro", address: "123 Main Street, Karachi", phone: "+92-300-1234567",
-      email: "admin@gymfitpro.com", currency: "PKR", timezone: "Asia/Karachi",
+      gymId,
+      gymName: "My Gym", address: "123 Main Street", phone: "+92-300-0000000",
+      email: "admin@mygym.com", currency: "PKR", timezone: "Asia/Karachi",
     }).returning();
     return res.json(created);
   }
@@ -2635,30 +2896,43 @@ router.get("/business", async (_req, res) => {
 });
 
 router.put("/business", async (req, res) => {
-  const { gymName, address, phone, email, logoUrl, currency, timezone } = req.body;
-  const [existing] = await db.select().from(businessSettingsTable).limit(1);
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const { gymName, address, phone, email, logoUrl, currency, timezone, dailyFee, weeklyFee, monthlyFee, quarterlyFee, yearlyFee } = req.body;
+  const [existing] = await db.select().from(businessSettingsTable).where(eq(businessSettingsTable.gymId, gymId)).limit(1);
+  const feeFields = {
+    ...(dailyFee !== undefined && { dailyFee: String(dailyFee) }),
+    ...(weeklyFee !== undefined && { weeklyFee: String(weeklyFee) }),
+    ...(monthlyFee !== undefined && { monthlyFee: String(monthlyFee) }),
+    ...(quarterlyFee !== undefined && { quarterlyFee: String(quarterlyFee) }),
+    ...(yearlyFee !== undefined && { yearlyFee: String(yearlyFee) }),
+  };
   if (existing) {
-    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
+    const [updated] = await db.update(businessSettingsTable).set({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields, updatedAt: new Date() }).where(eq(businessSettingsTable.id, existing.id)).returning();
     return res.json(updated);
   }
-  const [created] = await db.insert(businessSettingsTable).values({ gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone }).returning();
+  const [created] = await db.insert(businessSettingsTable).values({ gymId, gymName, address, phone, email, logoUrl: logoUrl || null, currency, timezone, ...feeFields }).returning();
   res.json(created);
 });
 
 // ── Reports ────────────────────────────────────────────────────────────────
 router.get("/reports/financial", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const month = (req.query.month as string) || today().slice(0, 7);
   const monthStart = month + "-01";
   const monthEnd = month + "-31";
 
-  const invoices = await db.select().from(invoicesTable);
-  const vouchers = await db.select().from(vouchersTable);
+  const invoices = await db.select().from(invoicesTable).where(eq(invoicesTable.gymId, gymId));
+  const vouchers = await db.select().from(vouchersTable).where(eq(vouchersTable.gymId, gymId));
+  const sales = await db.select().from(salesTable).where(eq(salesTable.gymId, gymId));
 
   const membershipIncome = invoices
     .filter(i => i.status === "paid" && i.paidDate && i.paidDate >= monthStart && i.paidDate <= monthEnd)
     .reduce((s, i) => s + parseFloat(i.amount as string), 0);
 
-  const sales = await db.select().from(salesTable);
   const salesIncome = sales
     .filter(s => s.status === "paid" && s.date >= monthStart && s.date <= monthEnd)
     .reduce((s, i) => s + parseFloat(i.totalAmount as string), 0);
@@ -2669,7 +2943,6 @@ router.get("/reports/financial", async (req, res) => {
 
   const totalRevenue = membershipIncome + salesIncome;
 
-  // Build weekly breakdown
   const breakdown = [];
   for (let w = 1; w <= 4; w++) {
     const weekStart = `${month}-${String((w - 1) * 7 + 1).padStart(2, "0")}`;
@@ -2687,9 +2960,16 @@ router.get("/reports/financial", async (req, res) => {
 });
 
 router.get("/reports/attendance", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const month = (req.query.month as string) || today().slice(0, 7);
   const rows = await db.select().from(attendanceTable).where(
-    and(gte(attendanceTable.date, month + "-01"), lte(attendanceTable.date, month + "-31"))
+    and(
+      eq(attendanceTable.gymId, gymId),
+      gte(attendanceTable.date, month + "-01"),
+      lte(attendanceTable.date, month + "-31")
+    )
   );
 
   const uniqueMembers = new Set(rows.map(r => r.memberId)).size;
@@ -2698,14 +2978,16 @@ router.get("/reports/attendance", async (req, res) => {
   const counts = Object.values(byDay);
   const avgDailyVisits = counts.length ? Math.round((counts.reduce((a, b) => a + b, 0) / counts.length) * 10) / 10 : 0;
   const peakDay = Object.entries(byDay).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "N/A";
-
   const chart = Object.entries(byDay).sort((a, b) => a[0].localeCompare(b[0])).map(([day, count]) => ({ day: day.slice(5), count }));
 
   res.json({ month, totalVisits: rows.length, uniqueMembers, avgDailyVisits, peakDay, chart });
 });
 
-router.get("/reports/members", async (_req, res) => {
-  const members = await db.select().from(membersTable);
+router.get("/reports/members", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const members = await db.select().from(membersTable).where(eq(membersTable.gymId, gymId));
   const now = today();
   const monthStart = now.slice(0, 7) + "-01";
   const weekEnd = new Date();
@@ -2736,15 +3018,23 @@ router.get("/reports/members", async (_req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Announcements ──────────────────────────────────────────────────────────
-router.get("/app-content/announcements", async (_req, res) => {
-  const rows = await db.select().from(appAnnouncementsTable).orderBy(desc(appAnnouncementsTable.createdAt));
+router.get("/app-content/announcements", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(appAnnouncementsTable)
+    .where(eq(appAnnouncementsTable.gymId, gymId))
+    .orderBy(desc(appAnnouncementsTable.createdAt));
   res.json(rows);
 });
 
 router.post("/app-content/announcements", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { title, body, type } = req.body;
   if (!title || !body) return res.status(400).json({ message: "Title and body required" });
-  const [row] = await db.insert(appAnnouncementsTable).values({ title, body, type: type || "info" }).returning();
+  const [row] = await db.insert(appAnnouncementsTable).values({ gymId, title, body, type: type || "info" }).returning();
   res.json(row);
 });
 
@@ -2798,16 +3088,24 @@ router.delete("/app-content/announcements/:id", async (req, res) => {
  *                   description:
  *                     type: string
  */
-router.get("/app-content/classes", async (_req, res) => {
-  const rows = await db.select().from(appClassesTable).orderBy(asc(appClassesTable.date), asc(appClassesTable.time));
+router.get("/app-content/classes", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(appClassesTable)
+    .where(eq(appClassesTable.gymId, gymId))
+    .orderBy(asc(appClassesTable.date), asc(appClassesTable.time));
   res.json(rows);
 });
 
 router.post("/app-content/classes", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, category, instructor, time, date, duration, capacity, location, level } = req.body;
   if (!name || !instructor || !time || !date) return res.status(400).json({ message: "Missing required fields" });
   const [row] = await db.insert(appClassesTable).values({
-    name, category: category || "Other", instructor, time, date,
+    gymId, name, category: category || "Other", instructor, time, date,
     duration: duration || 60, capacity: capacity || 20, enrolled: 0,
     location: location || "Main Floor", level: level || "All levels",
   }).returning();
@@ -2869,8 +3167,13 @@ router.delete("/app-content/classes/:id", async (req, res) => {
  *                     items:
  *                       type: object
  */
-router.get("/app-content/workout-plans", async (_req, res) => {
-  const plans = await db.select().from(appWorkoutPlansTable).orderBy(asc(appWorkoutPlansTable.id));
+router.get("/app-content/workout-plans", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const plans = await db.select().from(appWorkoutPlansTable)
+    .where(eq(appWorkoutPlansTable.gymId, gymId))
+    .orderBy(asc(appWorkoutPlansTable.id));
   const result = await Promise.all(plans.map(async (p) => {
     const exercises = await db.select().from(appWorkoutExercisesTable)
       .where(eq(appWorkoutExercisesTable.planId, p.id)).orderBy(asc(appWorkoutExercisesTable.order));
@@ -2880,12 +3183,14 @@ router.get("/app-content/workout-plans", async (_req, res) => {
 });
 
 router.post("/app-content/workout-plans", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, goal, level, duration, daysPerWeek, trainer, exercises } = req.body;
   if (!name) return res.status(400).json({ message: "Plan name required" });
   const [plan] = await db.insert(appWorkoutPlansTable).values({
-    name, goal: goal || "General fitness", level: level || "Beginner",
-    duration: duration || "4 weeks", daysPerWeek: daysPerWeek || 3,
-    trainer: trainer || "",
+    gymId, name, goal: goal || "General fitness", level: level || "Beginner",
+    duration: duration || "4 weeks", daysPerWeek: daysPerWeek || 3, trainer: trainer || "",
   }).returning();
   if (exercises && Array.isArray(exercises)) {
     for (let i = 0; i < exercises.length; i++) {
@@ -2965,8 +3270,13 @@ router.delete("/app-content/workout-plans/:id", async (req, res) => {
  *                     items:
  *                       type: object
  */
-router.get("/app-content/diet-plans", async (_req, res) => {
-  const plans = await db.select().from(appDietPlansTable).orderBy(asc(appDietPlansTable.id));
+router.get("/app-content/diet-plans", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const plans = await db.select().from(appDietPlansTable)
+    .where(eq(appDietPlansTable.gymId, gymId))
+    .orderBy(asc(appDietPlansTable.id));
   const result = await Promise.all(plans.map(async (p) => {
     const meals = await db.select().from(appDietMealsTable)
       .where(eq(appDietMealsTable.planId, p.id)).orderBy(asc(appDietMealsTable.order));
@@ -2976,10 +3286,13 @@ router.get("/app-content/diet-plans", async (_req, res) => {
 });
 
 router.post("/app-content/diet-plans", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, goal, calories, protein, carbs, fat, dietitian, meals } = req.body;
   if (!name) return res.status(400).json({ message: "Plan name required" });
   const [plan] = await db.insert(appDietPlansTable).values({
-    name, goal: goal || "General health", calories: calories || 2000,
+    gymId, name, goal: goal || "General health", calories: calories || 2000,
     protein: protein || 100, carbs: carbs || 250, fat: fat || 70,
     dietitian: dietitian || "",
   }).returning();
@@ -3027,8 +3340,13 @@ router.delete("/app-content/diet-plans/:id", async (req, res) => {
 });
 
 // ── Plans ─────────────────────────────────────────────────────────────────
-router.get("/plans", asyncHandler(async (_req, res) => {
-  const rows = await db.select().from(plansTable).orderBy(desc(plansTable.createdAt));
+router.get("/plans", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(plansTable)
+    .where(eq(plansTable.gymId, gymId))
+    .orderBy(desc(plansTable.createdAt));
   res.json(rows.map(r => ({
     ...r,
     totalFee: parseFloat(r.totalFee as string),
@@ -3037,10 +3355,13 @@ router.get("/plans", asyncHandler(async (_req, res) => {
 }));
 
 router.post("/plans", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { name, totalFee, commissionType, commissionValue, description, isActive } = req.body;
   if (!name || totalFee === undefined) return res.status(400).json({ message: "Name and totalFee are required" });
   const [row] = await db.insert(plansTable).values({
-    name,
+    gymId, name,
     totalFee: String(totalFee),
     commissionType: commissionType || "percentage",
     commissionValue: String(commissionValue || 0),
@@ -3073,6 +3394,9 @@ router.delete("/plans/:id", asyncHandler(async (req, res) => {
 
 // ── Client Subscriptions ──────────────────────────────────────────────────
 router.get("/client-subscriptions", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { trainerId, memberId, status } = req.query as Record<string, string>;
 
   const rows = await db.select({
@@ -3084,6 +3408,7 @@ router.get("/client-subscriptions", asyncHandler(async (req, res) => {
     .leftJoin(membersTable, eq(clientSubscriptionsTable.memberId, membersTable.id))
     .leftJoin(employeesTable, eq(clientSubscriptionsTable.trainerId, employeesTable.id))
     .leftJoin(plansTable, eq(clientSubscriptionsTable.planId, plansTable.id))
+    .where(eq(clientSubscriptionsTable.gymId, gymId))
     .orderBy(desc(clientSubscriptionsTable.createdAt));
 
   let result = rows.map(r => ({
@@ -3238,20 +3563,24 @@ router.post("/trainer-commissions/seed-demo", asyncHandler(async (_req, res) => 
 }));
 
 // ── Trainer Commissions ───────────────────────────────────────────────────
-router.get("/trainer-commissions", asyncHandler(async (_req, res) => {
-  const trainers = await db.select().from(employeesTable).where(eq(employeesTable.role, "trainer"));
+router.get("/trainer-commissions", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const trainers = await db.select().from(employeesTable)
+    .where(and(eq(employeesTable.gymId, gymId), eq(employeesTable.role, "trainer")));
 
   const now = today();
   const monthStart = now.slice(0, 7) + "-01";
 
   const result = await Promise.all(trainers.map(async (trainer) => {
     const subs = await db.select().from(clientSubscriptionsTable)
-      .where(eq(clientSubscriptionsTable.trainerId, trainer.id));
+      .where(and(eq(clientSubscriptionsTable.gymId, gymId), eq(clientSubscriptionsTable.trainerId, trainer.id)));
 
     const activeSubs = subs.filter(s => s.status === "active");
 
     const earnings = await db.select().from(trainerEarningsTable)
-      .where(eq(trainerEarningsTable.trainerId, trainer.id));
+      .where(and(eq(trainerEarningsTable.gymId, gymId), eq(trainerEarningsTable.trainerId, trainer.id)));
 
     const totalEarnings = earnings.reduce((s, e) => s + parseFloat(e.amount as string), 0);
     const monthlyEarnings = earnings
@@ -3276,6 +3605,9 @@ router.get("/trainer-commissions", asyncHandler(async (_req, res) => {
 }));
 
 router.get("/trainer-commissions/reports/monthly", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const { month } = req.query as Record<string, string>;
   const period = month || today().slice(0, 7);
   const monthStart = period + "-01";
@@ -3290,10 +3622,18 @@ router.get("/trainer-commissions/reports/monthly", asyncHandler(async (req, res)
     trainerName: employeesTable.name,
   }).from(trainerEarningsTable)
     .leftJoin(employeesTable, eq(trainerEarningsTable.trainerId, employeesTable.id))
-    .where(and(gte(trainerEarningsTable.date, monthStart), lte(trainerEarningsTable.date, nextMonth)));
+    .where(and(
+      eq(trainerEarningsTable.gymId, gymId),
+      gte(trainerEarningsTable.date, monthStart),
+      lte(trainerEarningsTable.date, nextMonth)
+    ));
 
   const paidInvoices = await db.select().from(invoicesTable)
-    .where(and(eq(invoicesTable.status, "paid"), gte(invoicesTable.paidDate as any, monthStart)));
+    .where(and(
+      eq(invoicesTable.gymId, gymId),
+      eq(invoicesTable.status, "paid"),
+      gte(invoicesTable.paidDate as any, monthStart)
+    ));
 
   const totalGymRevenue = paidInvoices.reduce((s, i) => {
     const gr = i.gymRevenue ? parseFloat(i.gymRevenue as string) : parseFloat(i.amount as string);
@@ -3322,8 +3662,12 @@ router.get("/trainer-commissions/reports/monthly", asyncHandler(async (req, res)
 }));
 
 router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const trainerId = parseInt(req.params.trainerId as string);
-  const [trainer] = await db.select().from(employeesTable).where(eq(employeesTable.id, trainerId));
+  const [trainer] = await db.select().from(employeesTable)
+    .where(and(eq(employeesTable.id, trainerId), eq(employeesTable.gymId, gymId)));
   if (!trainer) return res.status(404).json({ message: "Trainer not found" });
 
   const subs = await db.select({
@@ -3336,7 +3680,7 @@ router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
   }).from(clientSubscriptionsTable)
     .leftJoin(membersTable, eq(clientSubscriptionsTable.memberId, membersTable.id))
     .leftJoin(plansTable, eq(clientSubscriptionsTable.planId, plansTable.id))
-    .where(eq(clientSubscriptionsTable.trainerId, trainerId))
+    .where(and(eq(clientSubscriptionsTable.gymId, gymId), eq(clientSubscriptionsTable.trainerId, trainerId)))
     .orderBy(desc(clientSubscriptionsTable.createdAt));
 
   const now = today();
@@ -3350,7 +3694,7 @@ router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
   }).from(trainerEarningsTable)
     .leftJoin(invoicesTable, eq(trainerEarningsTable.sourcePaymentId, invoicesTable.id))
     .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
-    .where(eq(trainerEarningsTable.trainerId, trainerId))
+    .where(and(eq(trainerEarningsTable.gymId, gymId), eq(trainerEarningsTable.trainerId, trainerId)))
     .orderBy(desc(trainerEarningsTable.createdAt));
 
   const totalEarnings = earnings.reduce((s, e) => s + parseFloat(e.earning.amount as string), 0);
@@ -3389,6 +3733,9 @@ router.get("/trainer-commissions/:trainerId", asyncHandler(async (req, res) => {
 }));
 
 router.get("/trainer-commissions/:trainerId/earnings", asyncHandler(async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
   const trainerId = parseInt(req.params.trainerId as string);
   const { month } = req.query as Record<string, string>;
 
@@ -3400,7 +3747,7 @@ router.get("/trainer-commissions/:trainerId/earnings", asyncHandler(async (req, 
   }).from(trainerEarningsTable)
     .leftJoin(invoicesTable, eq(trainerEarningsTable.sourcePaymentId, invoicesTable.id))
     .leftJoin(membersTable, eq(invoicesTable.memberId, membersTable.id))
-    .where(eq(trainerEarningsTable.trainerId, trainerId))
+    .where(and(eq(trainerEarningsTable.gymId, gymId), eq(trainerEarningsTable.trainerId, trainerId)))
     .orderBy(desc(trainerEarningsTable.createdAt));
 
   let result = rows.map(r => ({
@@ -3411,16 +3758,19 @@ router.get("/trainer-commissions/:trainerId/earnings", asyncHandler(async (req, 
     invoicePlan: r.invoicePlan ?? "",
   }));
 
-  if (month) {
-    result = result.filter(r => r.date.startsWith(month));
-  }
+  if (month) result = result.filter(r => r.date.startsWith(month));
 
   res.json(result);
 }));
 
 // ── Onboarding Slides ──────────────────────────────────────────────────────
-router.get("/app-content/onboarding-slides", async (_req, res) => {
-  const rows = await db.select().from(appOnboardingSlidesTable).orderBy(asc(appOnboardingSlidesTable.order));
+router.get("/app-content/onboarding-slides", async (req, res) => {
+  const gymId = getGymIdFromRequest(req);
+  if (!gymId) return res.status(401).json({ message: "Unauthorized" });
+
+  const rows = await db.select().from(appOnboardingSlidesTable)
+    .where(eq(appOnboardingSlidesTable.gymId, gymId))
+    .orderBy(asc(appOnboardingSlidesTable.order));
   res.json(rows);
 });
 
